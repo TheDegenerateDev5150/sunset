@@ -1,8 +1,8 @@
-use crate::sftpsource::SftpSource;
+use crate::sftperror::SftpResult;
 
 use sunset::sshwire::{
-    BinString, SSHDecode, SSHEncode, SSHEncodeEnum, SSHSink, SSHSource, TextString,
-    WireError, WireResult,
+    self, BinString, SSHDecode, SSHEncode, SSHEncodeEnum, SSHSink, SSHSource,
+    TextString, WireError, WireResult,
 };
 use sunset_sshwire_derive::{SSHDecode, SSHEncode};
 
@@ -11,9 +11,19 @@ use log::{debug, error, info, log, trace, warn};
 use num_enum::FromPrimitive;
 use paste::paste;
 
-/// SFTP Minimum packet length is 9 bytes corresponding with `SSH_FXP_INIT`
-#[allow(unused)]
+/// SFTP minimum packet length, including length field.
+///
+/// `SSH_FXP_INIT`/`SSH_FXP_VERSION` have a u32 version field.
+/// All other packets have a u32 request id.
 pub const SFTP_MINIMUM_PACKET_LEN: usize = 9;
+
+/// Protocol packet length limit.
+///
+/// This is a size limit from draft-ietf-secsh-filexfer-02.txt
+/// Sunset may not support this size, but we can use it to
+/// differentiate between "we did something wrong"
+/// and "peer did something wrong" in error responses.
+pub(crate) const SFTP_MAXIMUM_PACKET_LEN: usize = 34000;
 
 pub const SFTP_FIELD_LEN_INDEX: usize = 0;
 /// SFTP packets length field us u32
@@ -77,6 +87,10 @@ impl<'a> Filename<'a> {
 
 /// An opaque handle that is used by the server to identify an open
 /// file or folder.
+
+// For OpaqueHandle sunset sftp server uses a fixed handle size,
+// see FileHandle::encode() and DirHandle::encode().
+// Receiving must still handle arbitrary handles from peers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SSHEncode, SSHDecode)]
 pub struct OpaqueHandle<'a>(pub BinString<'a>);
 
@@ -214,6 +228,24 @@ pub struct Write<'a> {
     /// The data length to be written. Given that it can be arbitrary long, the data is not decoded
     /// Instead the data_len is used in [[SftpHandler.Process]] to generate SftpServer.Write calls
     pub data_len: u32,
+}
+
+impl Write<'_> {
+    pub(crate) const PEEK_NEEDED: usize = 4;
+
+    /// Returns the length of input required for the Write struct,
+    /// based on the variable handle length.
+    ///
+    /// Requires at least 4 (`PEEK_NEEDED`) bytes of packet content.
+    /// Returned length does not include req_id, or the data itself.
+    /// Input should not include `req_id`.
+    pub(crate) fn peek_len(buf: &[u8]) -> Option<usize> {
+        let d = buf.get(..4)?;
+        let (handle_len, _) = sshwire::read_ssh::<u32>(d, None).ok()?;
+        // Oversized handle_len will fail in caller.
+        let l = (handle_len).saturating_add(4 + 8 + 4);
+        Some(l as usize)
+    }
 }
 
 /// Used for `ssh_fxp_lstat` [response](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.8).
@@ -808,17 +840,12 @@ macro_rules! sftpmessages {
                 }
             }
 
-            // TODO Maybe change WireResult -> SftpResult and SSHSink to SftpSink?
-            // This way I have more internal details and can return a Error::bug() if required
             /// Encode a request.
             ///
             /// Used by a SFTP client. Does not include the length field.
-            pub fn encode_request(&self, id: ReqId, s: &mut dyn SSHSink) -> WireResult<()> {
+            pub fn encode_request(&self, id: ReqId, s: &mut dyn SSHSink) -> SftpResult<()> {
                 if !self.sftp_num().is_request() {
-                    return Err(WireError::Bug)
-                    // return Err(Error::bug())
-                    // I understand that it would be a bad call of encode_response and
-                    // therefore a bug, bug Error::bug() is not compatible with WireResult
+                    Err(sunset::Error::bug())?;
                 }
 
                 // packet type
@@ -826,95 +853,22 @@ macro_rules! sftpmessages {
                 // request ID
                 id.0.enc(s)?;
                 // contents
-                self.enc(s)
+                self.enc(s)?;
+                Ok(())
             }
 
-            // TODO Maybe change WireResult -> SftpResult and SSHSource to SftpSource?
-            // This way I have more internal details and can return a more appropriate error if required
-            /// Decode a response.
-            ///
-            /// Used by a SFTP client. Does not include the length field.
-            pub fn decode_response(s: &mut SftpSource<'a>) -> WireResult<Self>
-            {
-                let packet_length = u32::dec(s)?;
-                trace!("Packet field len = {:?}, buffer len = {:?}", packet_length, s.remaining());
-                match Self::dec(s) {
-                    Ok(sftp_packet)=> {
-                        if !sftp_packet.sftp_num().is_response()
-                        {
-                            Err(WireError::PacketWrong)
-                        }else{
-                            Ok(sftp_packet)
-
-                        }
-                    },
-                    Err(e) => {
-                        Err(e)
-                    }
-                }
-            }
-
-
-            /// Decode a request or initialization packets
-            ///
-            /// Used by a SFTP server. Does not include the length field.
-            ///
-            /// It will fail if the received packet is a response, no valid or incomplete packet
-            pub fn decode_request(s: &mut SftpSource<'a>) -> WireResult<Self>
-            {
-                let packet_length = u32::dec(s)?;
-                trace!("Packet field len = {:?}, buffer len = {:?}", packet_length, s.remaining());
-
-                match Self::dec(s) {
-                    Ok(sftp_packet)=> {
-                        if (!sftp_packet.sftp_num().is_request()
-                            && !sftp_packet.sftp_num().is_init())
-                        {
-                            Err(WireError::PacketWrong)
-                        }else{
-                            Ok(sftp_packet)
-
-                        }
-                    },
-                    Err(e) => {
-                        match e {
-                            WireError::UnknownPacket{..} if !s.packet_fits() => Err(WireError::RanOut),
-                            _ => Err(e)
-                        }
-
-                    }
-                }
-            }
-
-            /// Decode a a packet without checking if it is request or response
-            ///
-            /// Used by a SFTP server. Does not include the length field.
-            ///
-            /// It will fail if the received packet is a response, no valid or incomplete packet
-            pub fn decode(s: &mut SftpSource<'a>) -> WireResult<Self>
-            {
-                let packet_length = u32::dec(s)?;
-                trace!("Packet field len = {:?}, buffer remaining = {:?}", packet_length, s.remaining());
-                Self::dec(s)
-            }
-
-            // TODO Maybe change WireResult -> SftpResult and SSHSink to SftpSink?
-            // This way I have more internal details and can return a Error::bug() if required
             /// Encode a response.
             ///
             /// Used by a SFTP server. Does not include the length field.
             ///
             /// Fails if the encoded SFTP Packet is not a response
-            pub fn encode_response(&self, s: &mut dyn SSHSink) -> WireResult<()> {
+            pub fn encode_response(&self, s: &mut dyn SSHSink) -> SftpResult<()> {
 
                 if !self.sftp_num().is_response() {
-                    return Err(WireError::PacketWrong)
-                    // return Err(Error::bug())
-                    // I understand that it would be a bad call of encode_response and
-                    // therefore a bug, bug Error::bug() is not compatible with WireResult
+                    Err(sunset::Error::bug())?;
                 }
 
-                self.enc(s)
+                Ok(self.enc(s)?)
             }
 
         }
@@ -982,6 +936,7 @@ sftpmessages! [
 mod proto_tests {
     use super::*;
     use crate::server::SftpSink;
+    use crate::sftpsource::{SftpDecoded, SftpSource};
 
     // TODO: There are always more test that can be done
 
@@ -1001,18 +956,17 @@ mod proto_tests {
         data_packet.encode_response(&mut sink).expect("Failed to encode response");
 
         let len = sink.payload_len();
-        let sl = sink.used_slice();
+        let mut sl = sink.used_slice().to_vec();
         println!("data_packet encoded_len = {:?}, encoded = {:?}", len, sl);
-        let mut source = SftpSource::new(sink.used_slice());
+        let source = SftpSource::from_data(&mut sl);
         println!("source = {:?}", source);
 
-        match SftpPacket::decode_response(&mut source) {
-            Ok(SftpPacket::Data(req_id, data)) => {
+        match source.decode() {
+            SftpDecoded::Packet(SftpPacket::Data(req_id, data)) => {
                 assert_eq!(req_id, ReqId(10));
                 assert_eq!(data.data, BinString(data_slice));
             }
-            Ok(other) => panic!("Expected Data packet, got: {:?}", other),
-            Err(e) => panic!("Failed to decode packet: {:?}", e),
+            r => panic!("Unexpected decode {r:?}"),
         }
     }
 
@@ -1063,49 +1017,35 @@ mod proto_tests {
         let len = sink.payload_len();
         let sl = sink.payload_slice();
         println!("attr_read_only encoded_len = {:?}, encoded = {:?}", len, sl);
-        let mut source = SftpSource::new(sl);
-        println!("source = {:?}", source);
 
-        let a_r = Attrs::dec(&mut source);
-        match a_r {
-            Ok(attrs) => {
-                println!("source = {:?}", attrs);
-                assert_eq!(attr_read_only, attrs);
-            }
-            Err(e) => panic!("The attributes could not be decoded: {:?}", e),
-        }
+        let (a_r, l_r) = sshwire::read_ssh::<Attrs>(&sl, None).unwrap();
+        assert_eq!(attr_read_only, a_r);
+        assert_eq!(len, l_r);
     }
 
     #[test]
     fn test_packet_open_reading() {
-        let buff_open_read = [
-            0u8, 0, 0,
-            58, //                                                      Len
-            3,  //                                                       SftpPacket
-            0, 0, 0,
-            4, //                                                      ReqId
-            0, 0, 0,
-            41, //                                                     Text String len
-            46, 47, 100, 101, 109, 111, 47, 115, 102,
-            116, //                   file Path
+        let mut buff_open_read = [
+            0u8, 0, 0, 58, // Len
+            3,  // SftpPacket
+            0, 0, 0, 4, //  ReqId
+            0, 0, 0, 41, // Text String len
+            46, 47, 100, 101, 109, 111, 47, 115, 102, 116, // file Path
             112, 47, 115, 116, 100, 47, 116, 101, 115, 116, 105, 110, 103, 47, 111,
             117, 116, 47, 46, 47, 53, 49, 50, 66, 95, 114, 97, 110, 100, 111,
-            109, //                                          and 41
-            0, 0, 0,
-            1, //                                                      PFlags: 1u32 == SSSH_FXF_READ
-            0, 0, 0,
-            0, //                                                      Attrib flags == 0 No flags, no attributes
+            109, // and 41
+            0, 0, 0, 1, //  PFlags: 1u32 == SSSH_FXF_READ
+            0, 0, 0, 0, //  Attrib flags == 0 No flags, no attributes
         ];
 
-        let mut source = SftpSource::new(&buff_open_read);
+        let source = SftpSource::from_data(&mut buff_open_read);
         println!("source = {:?}", source);
 
-        match SftpPacket::decode_request(&mut source) {
-            Ok(SftpPacket::Open(_req_id, open)) => {
+        match source.decode() {
+            SftpDecoded::Packet(SftpPacket::Open(_req_id, open)) => {
                 assert_eq!(PFlags::SSH_FXF_READ, open.pflags);
             }
-            Ok(other) => panic!("Expected Open packet, got: {:?}", other),
-            Err(e) => panic!("Failed to decode packet: {:?}", e),
+            d => panic!("Unexpected decode {d:?}"),
         }
     }
 }

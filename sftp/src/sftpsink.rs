@@ -65,7 +65,7 @@ impl<'g> SftpSink<'g> {
     /// Returns the length sent
     pub async fn send<W: Write>(self, mut w: W) -> SftpResult<u32> {
         let s = self.payload_slice();
-        w.write_all(s).await.map_err(|e| SftpError::from_embedded_io(e))?;
+        w.write_all(s).await.map_err(SftpError::from_embedded_io)?;
         Ok(s.len() as u32)
     }
 
@@ -81,7 +81,7 @@ impl<'g> SftpSink<'g> {
     }
 
     /// Reset the index and cleans the length field
-    pub fn reset(&mut self) -> () {
+    pub fn reset(&mut self) {
         debug!("SftpSink reset called when index was {:?}", self.index);
         self.index = SFTP_FIELD_LEN_LENGTH;
         for i in 0..SFTP_FIELD_LEN_LENGTH {
@@ -95,12 +95,9 @@ impl<'g> SSHSink for SftpSink<'g> {
         if v.len() + self.index > self.buffer.len() {
             return Err(WireError::NoRoom);
         }
-        trace!("Sink index: {:}", self.index);
-        v.iter().for_each(|val| {
-            trace!("Writing val {:} at index {:}", *val, self.index);
-            self.buffer[self.index] = *val;
-            self.index += 1;
-        });
+        trace!("Sink index: {}, write {:02x?}", self.index, v);
+        self.buffer[self.index..][..v.len()].copy_from_slice(v);
+        self.index += v.len();
         trace!("Sink new index: {:}", self.index);
         self.finalize();
         Ok(())

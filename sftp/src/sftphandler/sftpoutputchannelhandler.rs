@@ -9,6 +9,7 @@ use log::{debug, trace};
 /// Handle to send data to an output channel.
 pub struct SftpOutputProducer<'a, W: Write> {
     writer: &'a mut W,
+    /// Storage to encode outgoing packets
     buf: &'a mut [u8],
 }
 
@@ -20,7 +21,7 @@ impl<'a, W: Write> SftpOutputProducer<'a, W> {
     // TODO: if/when rust async drop is implemented, flush there.
     /// Flush output
     pub async fn flush(&mut self) -> SftpResult<()> {
-        self.writer.flush().await.map_err(|e| SftpError::from_embedded_io(e))
+        self.writer.flush().await.map_err(SftpError::from_embedded_io)
     }
 
     /// Sends the data encoded in the provided [`SftpSink`] without including
@@ -28,7 +29,7 @@ impl<'a, W: Write> SftpOutputProducer<'a, W> {
     ///
     /// Use this when you are sending chunks of data after a valid header
     pub async fn send_data(&mut self, buf: &[u8]) -> SftpResult<()> {
-        self.writer.write_all(buf).await.map_err(|e| SftpError::from_embedded_io(e))
+        self.writer.write_all(buf).await.map_err(SftpError::from_embedded_io)
     }
 
     /// Simplifies the task of sending a status response to the client.
@@ -54,9 +55,9 @@ impl<'a, W: Write> SftpOutputProducer<'a, W> {
         debug!("Output Producer: Sending packet {:?}", packet);
 
         self.writer
-            .write_all(&sink.used_slice())
+            .write_all(sink.used_slice())
             .await
-            .map_err(|e| SftpError::from_embedded_io(e))
+            .map_err(SftpError::from_embedded_io)
     }
 
     pub fn sink(&mut self) -> (SftpSink<'_>, &mut W) {

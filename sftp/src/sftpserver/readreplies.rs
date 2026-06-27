@@ -9,7 +9,8 @@ use crate::{
 use embedded_io_async::Write;
 use sunset::sshwire::SSHEncode;
 
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, error, info, log, trace, warn};
 
 /// Used to provide the header of a read reply, including
 /// only the fundamental information such as being an EOF reply or a data reply

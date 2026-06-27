@@ -1,6 +1,5 @@
 use crate::protocol::StatusCode;
 
-use crate::sftphandler::requestholder::RequestHolderError;
 use sunset::Error as SunsetError;
 use sunset::sshwire::WireError;
 
@@ -24,13 +23,10 @@ pub enum SftpError {
     /// - The request has not been handled by an [`crate::sftpserver::SftpServer`]
     /// - Long request which its handling was not implemented
     NotSupported,
-    /// The connection has been closed by the client
-    ClientDisconnected,
+    /// The connection has been closed, either by the peer or a transport error.
+    Disconnected,
     /// The [`crate::sftpserver::SftpServer`] failed doing an IO operation
     FileServerError(StatusCode),
-    // A RequestHolder instance throw an error. See [`crate::requestholder::RequestHolderError`]
-    /// A RequestHolder instance threw an error. See `RequestHolderError`
-    RequestHolderError(RequestHolderError),
     /// A variant containing a [`WireError`]
     WireError(WireError),
     /// A variant containing a [`SunsetError`]
@@ -62,12 +58,6 @@ impl From<StatusCode> for SftpError {
     }
 }
 
-impl From<RequestHolderError> for SftpError {
-    fn from(value: RequestHolderError) -> Self {
-        SftpError::RequestHolderError(value)
-    }
-}
-
 // impl From<FileServerError> for SftpError {
 //     fn from(value: FileServerError) -> Self {
 //         SftpError::FileServerError(value)
@@ -92,12 +82,11 @@ impl From<SftpError> for SunsetError {
             | SftpError::NotSupported
             | SftpError::AlreadyInitialized
             | SftpError::MalformedPacket
-            | SftpError::RequestHolderError(_)
             | SftpError::FileServerError(_) => {
                 warn!("Casting error loosing information: {:?}", value);
                 sunset::error::PacketWrong.build()
             }
-            SftpError::ClientDisconnected => SunsetError::ChannelEOF,
+            SftpError::Disconnected => SunsetError::ChannelEOF,
         }
     }
 }

@@ -1,10 +1,15 @@
 use crate::proto::{
-    SFTP_FIELD_ID_INDEX, SFTP_FIELD_LEN_INDEX, SFTP_FIELD_LEN_LENGTH,
-    SFTP_FIELD_REQ_ID_INDEX, SFTP_FIELD_REQ_ID_LEN, SftpNum,
+    self, ReqId, SFTP_FIELD_ID_INDEX, SFTP_FIELD_LEN_INDEX, SFTP_FIELD_LEN_LENGTH,
+    SFTP_FIELD_REQ_ID_INDEX, SFTP_FIELD_REQ_ID_LEN, SFTP_MINIMUM_PACKET_LEN,
+    SftpNum, SftpPacket,
 };
 
-use sunset::packets::ParseContext;
-use sunset::sshwire::{SSHSource, WireError, WireResult};
+use sunset::error::TrapBug;
+use sunset::sshwire;
+
+use crate::sftperror::{SftpError, SftpResult};
+
+use crate::sftphandler::SFTPBBQueue;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, log, trace, warn};
@@ -12,62 +17,61 @@ use log::{debug, error, info, log, trace, warn};
 /// SftpSource implements [`SSHSource`] and also extra functions to handle
 /// some challenges related to long SFTP packets in constrained environments
 #[derive(Default, Debug)]
-pub struct SftpSource<'de> {
-    buffer: &'de [u8],
-    index: usize,
-    ctx: ParseContext,
+pub struct SftpSource<'a> {
+    buffer: &'a mut [u8],
+    len: usize,
 }
 
-impl<'de> SSHSource<'de> for SftpSource<'de> {
-    fn take(&mut self, len: usize) -> sunset::sshwire::WireResult<&'de [u8]> {
-        if len.checked_add(self.index).ok_or(WireError::RanOut)? > self.buffer.len()
-        {
-            return Err(WireError::RanOut);
-        }
-        let original_index = self.index;
-        let slice = &self.buffer[self.index..self.index + len];
-        self.index += len;
-        trace!(
-            "slice returned: {:?}. original index {:?}, new index: {:?}",
-            slice, original_index, self.index
-        );
-        Ok(slice)
+impl<'a> SftpSource<'a> {
+    /// Creates a new `SftpSource` with storage.
+    ///
+    /// Existing data in `buffer` is unused.
+    /// `buffer` should have space for the packet, will panic
+    /// if less than 9, the minimum packet size.
+    pub fn empty(buffer: &'a mut [u8]) -> Self {
+        // We assume a buffer can hold at least a min packet.
+        assert!(buffer.len() >= SFTP_MINIMUM_PACKET_LEN);
+        SftpSource { buffer, len: 0 }
     }
 
-    fn remaining(&self) -> usize {
-        self.buffer.len() - self.index
+    /// Creates a `SftpSource` with content.
+    ///
+    /// Will panic on a short packet. Used for tests.
+    #[cfg(test)]
+    pub(crate) fn from_data(buffer: &'a mut [u8]) -> Self {
+        assert!(buffer.len() >= SFTP_MINIMUM_PACKET_LEN);
+        SftpSource { len: buffer.len(), buffer }
     }
 
-    fn ctx(&mut self) -> &mut ParseContext {
-        &mut self.ctx
+    /// Helper for current packet data.
+    fn data(&self) -> &[u8] {
+        &self.buffer[..self.len]
     }
-}
 
-impl<'de> SftpSource<'de> {
-    /// Creates a new [`SftpSource`] referencing a buffer
-    pub fn new(buffer: &'de [u8]) -> Self {
-        debug!("New source with content: : {:?}", buffer);
-        let ctx = ParseContext::new();
-        SftpSource { buffer: buffer, index: 0, ctx }
+    /// Helper for spare buffer space.
+    ///
+    /// Returns None if too long.
+    fn spare(&mut self, size: usize) -> Option<&mut [u8]> {
+        let end = self.len.checked_add(size)?;
+        self.buffer.get_mut(self.len..end)
     }
+
     /// Peeks the buffer for packet type [`SftpNum`]. This does not advance
     /// the reading index
     ///
     /// Useful to observe the packet fields in special conditions where a
     /// `dec(s)` would fail
-    ///
-    /// **Warning**: will only work in well formed packets, in other case
-    /// the result will contains garbage
-    pub(crate) fn peek_packet_type(&self) -> WireResult<SftpNum> {
-        if self.buffer.len() <= SFTP_FIELD_ID_INDEX {
+    pub(crate) fn peek_packet_type(&self) -> Option<SftpNum> {
+        let data = self.data();
+        if data.len() <= SFTP_FIELD_ID_INDEX {
             debug!(
                 "Peek packet type failed: buffer len <= SFTP_FIELD_ID_INDEX ( {:?} <= {:?})",
-                self.buffer.len(),
+                data.len(),
                 SFTP_FIELD_ID_INDEX
             );
-            Err(WireError::RanOut)
+            None
         } else {
-            Ok(SftpNum::from(self.buffer[SFTP_FIELD_ID_INDEX]))
+            Some(SftpNum::from(data[SFTP_FIELD_ID_INDEX]))
         }
     }
 
@@ -75,23 +79,13 @@ impl<'de> SftpSource<'de> {
     ///
     /// Useful to observe the packet fields in special conditions where a `dec(s)`
     /// would fail
-    ///
-    /// Use `peek_total_packet_len` instead if you want to also consider the the
-    /// length field
-    ///
-    /// **Warning**: will only work in well formed packets, in other case the result
-    /// will contains garbage
-    pub(crate) fn peek_packet_len(&self) -> WireResult<u32> {
-        if self.buffer.len() < SFTP_FIELD_LEN_INDEX + SFTP_FIELD_LEN_LENGTH {
-            Err(WireError::RanOut)
-        } else {
-            let bytes: [u8; 4] = self.buffer
-                [SFTP_FIELD_LEN_INDEX..SFTP_FIELD_LEN_INDEX + SFTP_FIELD_LEN_LENGTH]
-                .try_into()
-                .expect("slice length mismatch");
+    pub(crate) fn peek_packet_len(&self) -> Option<usize> {
+        let len = self.data().get(
+            SFTP_FIELD_LEN_INDEX..SFTP_FIELD_LEN_INDEX + SFTP_FIELD_LEN_LENGTH,
+        )?;
 
-            Ok(u32::from_be_bytes(bytes))
-        }
+        let bytes: [u8; 4] = len.try_into().unwrap();
+        Some(u32::from_be_bytes(bytes) as usize)
     }
 
     /// Peeks the packet in the source to obtain a total packet length, which
@@ -99,24 +93,8 @@ impl<'de> SftpSource<'de> {
     /// use [`peek_packet_len()`]
     ///
     ///  This does not advance the reading index
-    ///
-    ///
-    /// **Warning**: will only work in well formed packets, in other case the result
-    /// will contains garbage
-    pub(crate) fn peek_total_packet_len(&self) -> WireResult<u32> {
-        Ok(self.peek_packet_len()? + SFTP_FIELD_LEN_LENGTH as u32)
-    }
-
-    /// Compares the total source capacity and the peeked packet length
-    /// plus the length field length itself to find out if the packet fit
-    /// in the source  
-    /// **Warning**: will only work in well formed packets, in other case
-    /// the result will contains garbage
-    pub fn packet_fits(&self) -> bool {
-        match self.peek_total_packet_len() {
-            Ok(len) => self.buffer.len() >= len as usize,
-            Err(_) => false,
-        }
+    pub(crate) fn peek_total_packet_len(&self) -> Option<usize> {
+        self.peek_packet_len()?.checked_add(SFTP_FIELD_LEN_LENGTH)
     }
 
     /// Peeks the buffer for packet request id [`u32`]. This does not advance
@@ -124,34 +102,227 @@ impl<'de> SftpSource<'de> {
     ///
     /// Useful to observe the packet fields in special conditions where a
     /// `dec(s)` would fail
-    ///
-    /// **Warning**: will only work in well formed packets, in other case
-    /// the result will contains garbage
-    pub fn peek_packet_req_id(&self) -> WireResult<u32> {
-        if self.buffer.len() < SFTP_FIELD_REQ_ID_INDEX + SFTP_FIELD_REQ_ID_LEN {
-            Err(WireError::RanOut)
-        } else {
-            let bytes: [u8; 4] = self.buffer[SFTP_FIELD_REQ_ID_INDEX
-                ..SFTP_FIELD_REQ_ID_INDEX + SFTP_FIELD_LEN_LENGTH]
-                .try_into()
-                .expect("slice length mismatch");
+    pub fn peek_packet_req_id(&self) -> Option<ReqId> {
+        let r = self.data().get(
+            SFTP_FIELD_REQ_ID_INDEX..SFTP_FIELD_REQ_ID_INDEX + SFTP_FIELD_REQ_ID_LEN,
+        )?;
 
-            Ok(u32::from_be_bytes(bytes))
+        let bytes: [u8; 4] = r.try_into().unwrap();
+        Some(ReqId(u32::from_be_bytes(bytes)))
+    }
+
+    /// Returns the number of bytes remaining in the packet.
+    ///
+    /// This is a lower bound, more reads may be required.
+    /// `needed()` can be called again after reading in the data.
+    fn needed(&self) -> usize {
+        // All packets have length, type, req_id
+        let l = SFTP_MINIMUM_PACKET_LEN.saturating_sub(self.len);
+        if l > 0 {
+            return l;
+        }
+
+        // OK unwrap, packet is at least SFTP_MINIMUM_PACKET_LEN
+        let len = self.peek_total_packet_len().unwrap();
+        if len < SFTP_MINIMUM_PACKET_LEN {
+            // Finish and let the caller fail.
+            return 0;
+        }
+        let ty = self.peek_packet_type().unwrap();
+
+        debug_assert!(self.len <= len, "Can't fill longer than a packet");
+
+        match ty {
+            SftpNum::SSH_FXP_WRITE => {
+                // `proto::Write` struct has a reduced length compared to the total
+                // packet length, since it doesn't include actual write data.
+                // The handle length is variable, so we need to peek at it.
+                // (Sunset uses a fixed length, but we can't guarantee that from peers)
+
+                // Skip past req_id
+                let body = &self.data()[SFTP_MINIMUM_PACKET_LEN..];
+                // Reduced total len
+                let wlen = SFTP_MINIMUM_PACKET_LEN
+                    + proto::Write::peek_len(body)
+                        .unwrap_or(proto::Write::PEEK_NEEDED);
+                debug_assert!(self.len <= wlen);
+                wlen - self.len
+            }
+            SftpNum::Other(_) => {
+                // Unknown packets will be skipped over, so just read the req_id
+                // if included.
+                let req_id_len = SFTP_FIELD_REQ_ID_INDEX + SFTP_FIELD_REQ_ID_LEN;
+                req_id_len.min(len) - self.len
+            }
+            _ => {
+                // Normal packet, need all remaining packet content.
+                len - self.len
+            }
         }
     }
-    /// Returns a slice on the used portion of the held buffer.
+
+    /// Discards input data to the end of packet length.
     ///
-    /// This does not modify the internal index
-    pub fn buffer_used(&self) -> &[u8] {
-        &self.buffer[..self.index]
+    /// Must be called with a valid packet length in the buffer.
+    pub async fn drain<const B: usize>(
+        &self,
+        input: &SFTPBBQueue<B>,
+    ) -> SftpResult<()> {
+        let total_len = self.peek_total_packet_len().trap()?;
+        let mut len = total_len.checked_sub(self.len).trap()?;
+
+        let cons = input.stream_consumer();
+        while len > 0 {
+            let inp = cons.wait_read().await;
+            let l = inp.len().min(len);
+            inp.release(l);
+            len -= l;
+        }
+        Ok(())
     }
 
-    /// returns a slice on the held buffer and makes it unavailable for further  
-    /// decodes.
-    pub fn consume_all(&mut self) -> &[u8] {
-        self.index = self.buffer.len();
-        self.buffer
+    pub async fn fill<const B: usize>(
+        &mut self,
+        input: &SFTPBBQueue<B>,
+    ) -> SftpDecoded<'_> {
+        let cons = input.stream_consumer();
+        loop {
+            let l = self.needed();
+            if l == 0 {
+                break;
+            }
+
+            // Check for space to read into
+            let Some(dest) = self.spare(l) else {
+                let Some(req_id) = self.peek_packet_req_id() else {
+                    debug!("Short packet, no req_id");
+                    return SftpDecoded::FillError {
+                        error: SftpError::MalformedPacket,
+                    };
+                };
+
+                // OK unwrap, packet len is before req_id so must succeed.
+                let total_len = self.peek_total_packet_len().unwrap();
+
+                // Drain remainder of packet, ready for the next packet.
+                if let Err(error) = self.drain(input).await {
+                    trace!("Packet drain failed");
+                    return SftpDecoded::FillError { error };
+                }
+
+                warn!("Packet buffer full, len {}", total_len);
+                if total_len > proto::SFTP_MAXIMUM_PACKET_LEN {
+                    debug!("Packet too long");
+                    return SftpDecoded::BadMessage { req_id };
+                } else {
+                    return SftpDecoded::Failure { req_id };
+                }
+            };
+
+            // Fill dest from input bbqueue
+            let mut b = 0;
+            while b < dest.len() {
+                let inp = cons.wait_read().await;
+                let l = (dest.len() - b).min(inp.len());
+                dest[b..][..l].copy_from_slice(&inp[..l]);
+                inp.release(l);
+                b += l;
+            }
+
+            self.len += dest.len();
+        }
+
+        let res = self.decode();
+
+        // Unknown packets need to drain to end of packet.
+        if let SftpDecoded::UnknownPacket { .. } = res {
+            if let Err(error) = self.drain(input).await {
+                return SftpDecoded::FillError { error };
+            }
+        }
+
+        res
     }
+
+    pub fn decode(&self) -> SftpDecoded<'_> {
+        let Some(req_id) = self.peek_packet_req_id() else {
+            // Packet is shorter than minimum.
+            return SftpDecoded::FillError { error: sunset::Error::bug().into() };
+        };
+
+        // Skip the length prefix
+        let pkt_data = &self.buffer[..self.len][SFTP_FIELD_ID_INDEX..];
+
+        match sshwire::read_ssh::<SftpPacket>(pkt_data, None) {
+            Ok((pkt, declen)) => {
+                // Check that the entire packet is consumed
+                // TODO Attrs extensions are not yet handled.
+
+                let expect_len = match &pkt {
+                    SftpPacket::Write(_req_id, w) => {
+                        // Write struct needs special handling
+                        // since it doesn't cover the data at the end.
+
+                        // OK unwrap, length checked above.
+                        let full_len = self.peek_packet_len().unwrap();
+                        let Some(l) = full_len.checked_sub(w.data_len as usize)
+                        else {
+                            trace!("Bad write len {:?}", pkt);
+                            return SftpDecoded::BadMessage { req_id };
+                        };
+                        l
+                    }
+                    _ => pkt_data.len(),
+                };
+
+                if declen == expect_len {
+                    SftpDecoded::Packet(pkt)
+                } else {
+                    debug!(
+                        "Short packet req {:?}, {}/{}",
+                        req_id, declen, expect_len
+                    );
+                    trace!("Short {:?}", pkt);
+                    SftpDecoded::BadMessage { req_id }
+                }
+            }
+            Err(sunset::Error::UnknownPacket { number }) => {
+                SftpDecoded::UnknownPacket { req_id, number }
+            }
+            Err(error) => {
+                debug!("Error decoding packet: {:?} req {:?}", error, req_id);
+                SftpDecoded::BadMessage { req_id }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum SftpDecoded<'a> {
+    /// A known packet was parsed.
+    Packet(SftpPacket<'a>),
+    /// Should send a `SSH_FX_OP_UNSUPPORTED` response.
+    UnknownPacket {
+        req_id: ReqId,
+        #[allow(unused)]
+        /// Packet type
+        number: u8,
+    },
+    /// The received packet was incorrectly formatted.
+    ///
+    /// Should send a `SSH_FX_BAD_MESSAGE` response.
+    BadMessage { req_id: ReqId },
+    /// An error occurred decoding the packet.
+    ///
+    /// This may occur for correct packets if Sunset does not
+    /// handle them, for example hitting length limits.
+    ///
+    /// Should send a `SSH_FX_FAILURE` response.
+    Failure { req_id: ReqId },
+    /// An unrecoverable error occurred in the input.
+    ///
+    /// The connection must close.
+    FillError { error: SftpError },
 }
 
 #[cfg(test)]
@@ -174,68 +345,38 @@ mod local_tests {
 
     #[test]
     fn peeking_len() {
-        let buffer_status = status_buffer();
-        let source = SftpSource::new(&buffer_status);
+        let mut buffer_status = status_buffer();
+        let source = SftpSource::from_data(&mut buffer_status);
 
         let read_packet_len = source.peek_packet_len().unwrap();
-        let original_packet_len = 23u32;
+        let original_packet_len = 23;
         assert_eq!(original_packet_len, read_packet_len);
     }
     #[test]
     fn peeking_total_len() {
-        let buffer_status = status_buffer();
-        let source = SftpSource::new(&buffer_status);
+        let mut buffer_status = status_buffer();
+        let source = SftpSource::from_data(&mut buffer_status);
 
         let read_total_packet_len = source.peek_total_packet_len().unwrap();
-        let original_total_packet_len = 23u32 + 4u32;
+        let original_total_packet_len = 23 + 4;
         assert_eq!(original_total_packet_len, read_total_packet_len);
     }
 
     #[test]
     fn peeking_type() {
-        let buffer_status = status_buffer();
-        let source = SftpSource::new(&buffer_status);
+        let mut buffer_status = status_buffer();
+        let source = SftpSource::from_data(&mut buffer_status);
         let read_packet_type = source.peek_packet_type().unwrap();
         let original_packet_type = SftpNum::from(101u8);
         assert_eq!(original_packet_type, read_packet_type);
     }
+
     #[test]
     fn peeking_req_id() {
-        let buffer_status = status_buffer();
-        let source = SftpSource::new(&buffer_status);
+        let mut buffer_status = status_buffer();
+        let source = SftpSource::from_data(&mut buffer_status);
         let read_req_id = source.peek_packet_req_id().unwrap();
-        let original_req_id = 16u32;
+        let original_req_id = ReqId(16);
         assert_eq!(original_req_id, read_req_id);
-    }
-
-    #[test]
-    fn packet_does_fit() {
-        let buffer_status = status_buffer();
-        let source = SftpSource::new(&buffer_status);
-        assert_eq!(true, source.packet_fits());
-    }
-
-    #[test]
-    fn packet_does_not_fit() {
-        let buffer_status = status_buffer();
-        let no_room_buffer = &buffer_status[..buffer_status.len() - 2];
-        let source = SftpSource::new(no_room_buffer);
-        assert_eq!(false, source.packet_fits());
-    }
-
-    #[test]
-    fn consume_all_remaining() {
-        let inc_array: [u8; 512] = core::array::from_fn(|i| (i % 255) as u8);
-        let mut source = SftpSource::new(&inc_array);
-        let _consumed = source.consume_all();
-        assert_eq!(0usize, source.remaining());
-    }
-
-    #[test]
-    fn consume_all_consumed() {
-        let inc_array: [u8; 512] = core::array::from_fn(|i| (i % 255) as u8);
-        let mut source = SftpSource::new(&inc_array);
-        let consumed = source.consume_all();
-        assert_eq!(inc_array.len(), consumed.len());
     }
 }

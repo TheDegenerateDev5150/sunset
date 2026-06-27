@@ -2,7 +2,7 @@
 use log::LevelFilter;
 use sunset::*;
 use sunset_async::{ProgressHolder, SSHServer, SunsetMutex, SunsetRawMutex};
-use sunset_sftp::{SftpHandler, server::MAX_REQUEST_LEN};
+use sunset_sftp::SftpHandler;
 
 use sunset_demo_common::{self, DemoCommon, DemoServer, SSHConfig};
 
@@ -156,20 +156,15 @@ impl DemoServer for StdDemo {
 
                 info!("SFTP loop has received a channel handle {:?}", ch.num());
 
-                let mut request_buffer = [0u8; MAX_REQUEST_LEN];
-
                 match {
                     let (chan_in, chan_out) = serv.stdio(ch).await?.split();
                     let mut file_server = DemoSftpServer::new(
                         "./demo/sftp/std/testing/out/".to_string(),
                     );
 
-                    SftpHandler::<_, 512>::new(
-                        &mut file_server,
-                        &mut request_buffer,
-                    )
-                    .process_loop(chan_in, chan_out)
-                    .await?;
+                    SftpHandler::<_, 512>::new(&mut file_server)
+                        .process_loop(chan_in, chan_out)
+                        .await?;
 
                     Ok::<_, Error>(())
                 } {
