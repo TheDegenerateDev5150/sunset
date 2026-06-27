@@ -40,7 +40,7 @@ impl<'a, W: Write> SftpOutputProducer<'a, W> {
     ) -> SftpResult<()> {
         let response = SftpPacket::Status(
             req_id,
-            Status { code: status, message: msg.into(), lang: "en-US".into() },
+            Status { code: status, message: msg.into(), lang: "".into() },
         );
         trace!("Output Producer: Pushing a status message: {:?}", response);
         self.send_packet(&response).await?;
