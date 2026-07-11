@@ -138,12 +138,16 @@ pub fn packet_from_bytes<'a>(b: &'a [u8], ctx: &ParseContext) -> Result<Packet<'
     }
 }
 
+/// Decodes a `SSHDecode` instance from a slice.
+///
+/// Returns the instance and the length of bytes used.
 pub fn read_ssh<'a, T: SSHDecode<'a>>(
     b: &'a [u8],
     ctx: Option<ParseContext>,
-) -> Result<T> {
+) -> Result<(T, usize)> {
     let mut s = DecodeBytes { input: b, parse_ctx: ctx.unwrap_or_default() };
-    Ok(T::dec(&mut s)?)
+    let r = T::dec(&mut s)?;
+    Ok((r, b.len() - s.remaining()))
 }
 
 pub fn write_ssh(target: &mut [u8], value: &dyn SSHEncode) -> Result<usize> {
@@ -904,7 +908,7 @@ pub(crate) mod tests {
         buf1.truncate(l + 5);
         // make the length one extra
         buf1[3] += 1;
-        let r: Result<Blob<BinString>, _> = read_ssh(&buf1, None);
+        let r = read_ssh::<Blob<BinString>>(&buf1, None);
         assert!(matches!(r.unwrap_err(), Error::SSHProto { .. }));
 
         let mut buf1 = vec![88; 1000];
@@ -913,7 +917,7 @@ pub(crate) mod tests {
         buf1.truncate(l + 5);
         // make the length one short
         buf1[3] -= 1;
-        let r: Result<Blob<BinString>, _> = read_ssh(&buf1, None);
+        let r = read_ssh::<Blob<BinString>>(&buf1, None);
         assert!(matches!(r.unwrap_err(), Error::SSHProto { .. }));
     }
 

@@ -333,7 +333,7 @@ mod tests {
         let mut buf = [0u8; 1000];
         let l = sshwire::write_ssh(&mut buf, &c1).unwrap();
         let v = &buf[..l];
-        let c2: SSHConfig = sshwire::read_ssh(v, None).unwrap();
+        let (c2, _l) = sshwire::read_ssh(v, None).unwrap();
         assert_eq!(c1, c2);
 
         // All the fruit, to check BUF_SIZE.
@@ -386,7 +386,7 @@ mod tests {
         let l = sshwire::write_ssh(&mut buf, &c1).expect(&size_msg);
         println!("BUF_SIZE must be at least {}", l);
         let v = &buf[..l];
-        let c2: SSHConfig = sshwire::read_ssh(v, None).unwrap();
+        let (c2, _) = sshwire::read_ssh(v, None).unwrap();
         assert_eq!(c1, c2);
     }
 }

@@ -111,14 +111,20 @@ pub(crate) enum FileOrDirHandle {
 pub(crate) fn decode_opaque_handle(
     h: OpaqueHandle,
 ) -> Result<FileOrDirHandle, StatusCode> {
-    let h = sshwire::read_ssh::<OpaqueHandleFormat>(h.0.0, None).map_err(|_| {
-        debug!("Bad opaque handle {:02x?}", h.0.0);
-        StatusCode::SSH_FX_BAD_MESSAGE
-    })?;
+    let (dh, len) =
+        sshwire::read_ssh::<OpaqueHandleFormat>(h.0.0, None).map_err(|_| {
+            debug!("Bad opaque handle {:02x?}", h.0.0);
+            StatusCode::SSH_FX_BAD_MESSAGE
+        })?;
 
-    match h.is_dir {
-        0 => Ok(FileOrDirHandle::File(FileHandle(h.handle))),
-        1 => Ok(FileOrDirHandle::Dir(DirHandle(h.handle))),
+    if len != h.0.0.len() {
+        trace!("Short opaque handle {:02x?}", h.0.0);
+        return Err(StatusCode::SSH_FX_BAD_MESSAGE);
+    }
+
+    match dh.is_dir {
+        0 => Ok(FileOrDirHandle::File(FileHandle(dh.handle))),
+        1 => Ok(FileOrDirHandle::Dir(DirHandle(dh.handle))),
         _ => Err(StatusCode::SSH_FX_BAD_MESSAGE),
     }
 }

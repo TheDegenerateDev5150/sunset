@@ -36,7 +36,7 @@ impl<'p> FuzzInput<'p> {
     const MIN_CONTROL: usize = 2000;
 
     pub fn new(input: &'p [u8]) -> Result<Self> {
-        let input = sshwire::read_ssh::<FuzzInput>(input, None)?;
+        let (input, _l) = sshwire::read_ssh::<FuzzInput>(input, None)?;
         if input.data.0.len() < Self::MIN_DATA {
             println!("mindata {}", input.data.0.len());
             return error::RanOut.fail();

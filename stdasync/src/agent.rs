@@ -142,7 +142,7 @@ impl AgentClient {
         }
         self.buf.resize(l, 0);
         self.conn.read_exact(&mut self.buf).await?;
-        let r: AgentResponse = sshwire::read_ssh(&self.buf, None)?;
+        let (r, _l) = sshwire::read_ssh::<AgentResponse>(&self.buf, None)?;
         Ok(r)
     }
 

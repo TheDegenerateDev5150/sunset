@@ -87,7 +87,7 @@ pub async fn load(fl: &mut Fl<'_>) -> Result<SSHConfig> {
         Error::msg("flash error")
     })?;
 
-    let s: FlashConfig = sshwire::read_ssh(&fl.buf, None)?;
+    let (s, _len) = sshwire::read_ssh::<FlashConfig>(&fl.buf, None)?;
 
     if s.version != SSHConfig::CURRENT_VERSION {
         return Err(Error::msg("wrong config version"));
