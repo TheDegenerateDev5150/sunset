@@ -15,38 +15,19 @@ use paste::paste;
 #[allow(unused)]
 pub const SFTP_MINIMUM_PACKET_LEN: usize = 9;
 
-#[allow(unused)]
 pub const SFTP_FIELD_LEN_INDEX: usize = 0;
 /// SFTP packets length field us u32
-#[allow(unused)]
 pub const SFTP_FIELD_LEN_LENGTH: usize = 4;
 /// SFTP packets have the packet type after a u32 length field
-#[allow(unused)]
 pub const SFTP_FIELD_ID_INDEX: usize = 4;
-/// SFTP packets ID length is 1 byte
 #[allow(unused)]
+/// SFTP packets ID length is 1 byte
 pub const SFTP_FIELD_ID_LEN: usize = 1;
-/// SFTP packets start with the length field
 
 /// SFTP packets have the packet request id after field id
-#[allow(unused)]
 pub const SFTP_FIELD_REQ_ID_INDEX: usize = 5;
 /// SFTP packets ID length is 1 byte
-#[allow(unused)]
 pub const SFTP_FIELD_REQ_ID_LEN: usize = 4;
-/// SFTP packets start with the length field
-
-// SSH_FXP_WRITE SFTP Packet definition used to decode long packets that do not fit in one buffer
-
-/// SFTP SSH_FXP_WRITE Packet cannot be shorter than this (len:4+pnum:1+rid:4+hand:4+0+data:4+0 bytes = 17 bytes) [draft-ietf-secsh-filexfer-02](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.4)
-// pub const SFTP_MINIMUM_WRITE_PACKET_LEN: usize = 17;
-
-#[allow(unused)]
-/// SFTP SSH_FXP_WRITE Packet request id field index  [draft-ietf-secsh-filexfer-02](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.4)
-pub const SFTP_WRITE_REQID_INDEX: usize = 5;
-
-/// SFTP SSH_FXP_WRITE Packet handle field index  [draft-ietf-secsh-filexfer-02](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.4)
-// pub const SFTP_WRITE_HANDLE_INDEX: usize = 9;
 
 /// Considering the definition in [Section 7](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-7)
 /// for handle maximum length
@@ -88,7 +69,7 @@ impl<'a> From<&'a str> for Filename<'a> {
 
 // TODO standardize the encoding of filenames as str
 impl<'a> Filename<'a> {
-    ///
+    /// Return the name as a `str`.
     pub fn as_str(&self) -> Result<&'a str, WireError> {
         core::str::from_utf8(self.0.0).map_err(|_| WireError::BadString)
     }
@@ -112,7 +93,7 @@ pub struct InitVersionClient {
     // TODO variable number of ExtPair
 }
 
-/// The lowers SFTP version from the client and the server
+/// The lowest SFTP version from the client and the server
 #[derive(Debug, SSHEncode, SSHDecode)]
 pub struct InitVersionLowest {
     // No ReqId for SSH_FXP_VERSION
@@ -686,19 +667,20 @@ macro_rules! sftpmessages {
         } //paste
 
         impl SftpNum {
+            #[allow(unused)]
             fn is_init(&self) -> bool {
-                (1..=1).contains(&(u8::from(self.clone())))
+                (1..=1).contains(&(u8::from(*self)))
             }
 
             pub(crate) fn is_request(&self) -> bool {
                 // TODO SSH_FXP_EXTENDED
-                (3..=20).contains(&(u8::from(self.clone())))
+                (3..=20).contains(&(u8::from(*self)))
             }
 
             fn is_response(&self) -> bool {
                 // TODO SSH_FXP_EXTENDED_REPLY
-                (100..=105).contains(&(u8::from(self.clone())))
-                ||(2..=2).contains(&(u8::from(self.clone())))
+                (100..=105).contains(&(u8::from(*self)))
+                  ||(2..=2).contains(&(u8::from(*self)))
             }
         }
 

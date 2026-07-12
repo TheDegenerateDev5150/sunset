@@ -104,9 +104,9 @@ where
     /// Requires:
     ///
     /// - `file_server` (implementing [`crate::sftpserver::SftpServer`] ): to execute
-    /// the request in the local system
+    ///   the request in the local system
     /// - `request_buffer`: used to deal with fragmented
-    /// packets during [`SftpHandler::process_loop`]
+    ///   packets during [`SftpHandler::process_loop`]
     pub fn new(file_server: &'a mut S, request_buffer: &'a mut [u8]) -> Self {
         SftpHandler {
             file_server,
@@ -401,7 +401,7 @@ where
     }
     /// - Decodes the buffer_in request
     /// - Process the request delegating
-    /// operations to a [`SftpServer`] implementation
+    ///   operations to a [`SftpServer`] implementation
     /// - Serializes an answer in `output_producer`
     ///
     /// Returns the amount of data consumed.
