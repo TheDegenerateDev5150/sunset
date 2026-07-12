@@ -9,7 +9,7 @@ use crate::{
 use embedded_io_async::Write;
 use sunset::sshwire::SSHEncode;
 
-use log::debug;
+use log::trace;
 
 /// Used to provide the header of a read reply, including
 /// only the fundamental information such as being an EOF reply or a data reply
@@ -40,7 +40,7 @@ impl<'a, 'p, W: Write> ReadHeaderReply<'a, 'p, W> {
         self,
         data_len: u32,
     ) -> SftpResult<ReadDataReply<'a, 'p, W>> {
-        debug!(
+        trace!(
             "ReadReply: Sending header for request id {:?}: data length = {:?}",
             self.req_id, data_len
         );

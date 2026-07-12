@@ -181,6 +181,9 @@ impl Channels {
         }
         send.window -= data.len();
         trace!("send_data: new window {}", send.window);
+        if send.window == 0 {
+            debug!("ch {num} send window empty");
+        }
 
         let data = BinString(data);
         let p = match dt {
@@ -438,7 +441,7 @@ impl Channels {
                 let chan = self.get_mut(ChanNum(p.num))?;
                 let send = chan.send.as_mut().trap()?;
                 send.window = send.window.saturating_add(p.adjust as usize);
-                trace!("new window {}", send.window);
+                debug!("ch {} new window +{} = {}", p.num, p.adjust, send.window);
                 // Wake any writers that might have been blocked.
                 chan.wake_write(is_client);
             }

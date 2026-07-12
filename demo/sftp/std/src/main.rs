@@ -1,3 +1,5 @@
+#[allow(unused)]
+use log::LevelFilter;
 use sunset::*;
 use sunset_async::{ProgressHolder, SSHServer, SunsetMutex, SunsetRawMutex};
 use sunset_sftp::{SftpHandler, server::MAX_REQUEST_LEN};
@@ -214,6 +216,10 @@ async fn main(spawner: Spawner) {
     env_logger::Builder::from_env(env)
         .format_timestamp_nanos()
         .target(env_logger::Target::Stdout)
+        // .filter(Some("sunset_sftp"), LevelFilter::Debug)
+        // .filter(Some("sunset_async"), LevelFilter::Debug)
+        // .filter(Some("sunset::runner"), LevelFilter::Debug)
+        // .filter(Some("sunset::channel"), LevelFilter::Debug)
         .init();
 
     spawner.spawn(main_task(spawner).unwrap());
