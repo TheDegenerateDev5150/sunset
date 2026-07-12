@@ -92,24 +92,21 @@ impl<'a, 'p, W: Write> ReadHeaderReply<'a, 'p, W> {
 /// without having to worry about sending more data than the announced length.
 pub struct LimitedSender<'a, 'g, W: Write> {
     chan_out: &'a mut SftpOutputProducer<'g, W>,
-    remaining: core::cell::Cell<u32>,
+    remaining: u32,
 }
 
 impl<'a, 'g, W: Write> LimitedSender<'a, 'g, W> {
     fn new(chan_out: &'a mut SftpOutputProducer<'g, W>, limit: u32) -> Self {
-        Self { chan_out, remaining: core::cell::Cell::new(limit) }
+        Self { chan_out, remaining: limit }
     }
     /// Sends a chunk of data, ensuring that no more than the announced data length is sent.
     ///
     /// It returns the remaining data length that can be sent after this call.
     pub async fn send_data(&mut self, buff: &[u8]) -> SftpResult<u32> {
-        let mut remaining = self.remaining.get();
-
-        let length_to_send = remaining.min(buff.len() as u32);
+        let length_to_send = self.remaining.min(buff.len() as u32);
         self.chan_out.send_data(&buff[..length_to_send as usize]).await?;
-        remaining -= length_to_send;
-        self.remaining.set(remaining);
-        Ok(remaining)
+        self.remaining -= length_to_send;
+        Ok(self.remaining)
     }
 
     /// Obtains a [`CompletedDataSent`] if the announced data length has been completely sent, otherwise returns None.
@@ -118,7 +115,7 @@ impl<'a, 'g, W: Write> LimitedSender<'a, 'g, W> {
     }
 
     fn is_complete(&self) -> bool {
-        self.remaining.get() == 0
+        self.remaining == 0
     }
 }
 
