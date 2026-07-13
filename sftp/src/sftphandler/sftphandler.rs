@@ -1,3 +1,7 @@
+use core::cell::RefCell;
+use core::future::poll_fn;
+use core::task::{Poll, Waker};
+
 use crate::error::SftpError;
 use crate::proto::{
     self, InitVersionClient, InitVersionLowest, LStat, MAX_REQUEST_LEN, ReqId,
@@ -16,20 +20,6 @@ use embassy_futures::select::{Either, select};
 use embedded_io_async::{Read, Write};
 #[allow(unused_imports)]
 use log::{debug, error, info, log, trace, warn};
-
-// Platforms like thumbv6m-none-eabi can't atomics, so instead
-// use critical-section.
-type SFTPCoord = cfg_select! {
-    target_has_atomic = "ptr" => bbqueue::traits::coordination::cas::AtomicCoord,
-    _ => bbqueue::traits::coordination::cs::CsCoord,
-};
-
-/// An async bbqueue with inline storage
-pub type SFTPBBQueue<const N: usize> = bbqueue::BBQueue<
-    bbqueue::traits::storage::Inline<N>,
-    SFTPCoord,
-    bbqueue::traits::notifier::maitake::MaiNotSpsc,
->;
 
 /// FSM for handling SFTP requests during [`SftpHandler::process`].
 #[derive(Debug, PartialEq, Eq)]
@@ -129,6 +119,7 @@ where
             SftpOutputProducer::new(&mut chan_out, &mut out_buf);
 
         // Docs for `INPUT_BUF` describe the queue's purpose.
+        // This bbq may not be shared between futures.
         let in_buf = SFTPBBQueue::new();
 
         let read_loop = async {
@@ -575,5 +566,61 @@ where
         }
 
         Ok(())
+    }
+}
+
+// Platforms like thumbv6m-none-eabi can't atomics, so instead
+// use critical-section.
+type SFTPCoord = cfg_select! {
+    target_has_atomic = "ptr" => bbqueue::traits::coordination::cas::AtomicCoord,
+    _ => bbqueue::traits::coordination::cs::CsCoord,
+};
+
+/// An async bbqueue with inline storage
+///
+/// This must only be used within a single `Future`, so it
+/// can use a simple `Notifier`.
+pub type SFTPBBQueue<const N: usize> =
+    bbqueue::BBQueue<bbqueue::traits::storage::Inline<N>, SFTPCoord, OneFutNotifier>;
+
+pub struct OneFutNotifier {
+    /// Only used within a single future, so one `Waker` is enough.
+    waker: RefCell<Option<Waker>>,
+}
+
+impl bbqueue::export::ConstInit for OneFutNotifier {
+    const INIT: Self = OneFutNotifier { waker: RefCell::new(None) };
+}
+
+impl bbqueue::traits::notifier::Notifier for OneFutNotifier {
+    fn wake_one_consumer(&self) {
+        self.waker.take().map(|w| w.wake_by_ref());
+    }
+
+    fn wake_one_producer(&self) {
+        self.wake_one_consumer();
+    }
+}
+
+impl bbqueue::traits::notifier::AsyncNotifier for OneFutNotifier {
+    async fn wait_for_not_empty<T, F: FnMut() -> Option<T>>(&self, mut f: F) -> T {
+        poll_fn(|cx| match f() {
+            Some(t) => Poll::Ready(t),
+            None => {
+                if !self
+                    .waker
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|w| w.will_wake(cx.waker()))
+                {
+                    self.waker.replace(Some(cx.waker().clone()));
+                }
+                Poll::Pending
+            }
+        })
+        .await
+    }
+    async fn wait_for_not_full<T, F: FnMut() -> Option<T>>(&self, f: F) -> T {
+        self.wait_for_not_empty(f).await
     }
 }
