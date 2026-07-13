@@ -1,7 +1,7 @@
 mod sftphandler;
 mod sftpoutputchannelhandler;
 
-pub use sftphandler::{SFTPBBQueue, SftpHandler};
+pub use sftphandler::{SFTPBBQueue, SftpServerHandler};
 pub use sftpoutputchannelhandler::SftpOutputProducer;
 
 #[cfg(test)]

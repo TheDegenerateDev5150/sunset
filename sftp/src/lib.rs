@@ -64,12 +64,12 @@ mod sftpsource;
 // a [`server::SftpServer`].
 //
 // Please see basic usage at `../demo/sftp/std`
-pub use sftphandler::SftpHandler;
+pub use sftphandler::SftpServerHandler;
 
 /// Structures and types used to add the details for the target system
 ///
 /// Related to the implementation of the [`server::SftpServer`], which
-/// is meant to be instantiated by the user and passed to [`SftpHandler`]
+/// is meant to be instantiated by the user and passed to [`SftpServerHandler`]
 /// and has the task of executing client requests in the underlying system
 pub mod server {
 

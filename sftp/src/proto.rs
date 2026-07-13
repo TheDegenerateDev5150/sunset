@@ -54,8 +54,13 @@ pub const MAX_PATH_LEN: usize = 1024; // PATH_MAX for macOS
 #[cfg(feature = "long-paths-4096")]
 pub const MAX_PATH_LEN: usize = 4096; // Linux glibc PATH_MAX is typically 4096 bytes
 
-/// Maximum request size, considering [[MAX_PATH_LEN]] but not counting the data payload.
-/// At this moment in time, the longest request is `ssh_fxp_open`
+/// Maximum request size.
+///
+/// This accounts for [MAX_PATH_LEN] (varying with crate features).
+/// Read/write packet payloads are not included in this size, they
+/// are handled independently.
+///
+/// At this moment in time, the longest request is `SSH_FXP_OPEN`.
 pub const MAX_REQUEST_LEN: usize = 4 + MAX_PATH_LEN // Filename string
                                 + 4 // PFlags (u32)
                                 + 32; // Attrs (Max 32Bytes not counting extensions)

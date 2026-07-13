@@ -66,17 +66,98 @@ enum HandlerState {
 /// demo/sftp/std/testing/test_get_file_long.sh
 const INPUT_BUF: usize = 30 * 5;
 
-/// Process the raw buffers in and out from a subsystem channel decoding
-/// request and encoding responses
+/// A SFTP server implementation.
 ///
-/// Parameter `S`: Will delegate request to an [`crate::sftpserver::SftpServer`]
-/// implemented by the library user taking into account the local system details.
-///
-/// Parameter `BUFFER_OUT_SIZE` sizes an output buffer to send responses.
+/// Parameter `RESP_BUF` sizes an output buffer to send responses.
 /// Must be sufficiently to create responses such as file entries
 /// (size will depend on maximum file length).
 /// 512 would be a typical small buffer.
-pub struct SftpHandler<'a, S, const BUFFER_OUT_SIZE: usize>
+///
+/// `REQ_BUF` is the input buffer that must be able to hold
+/// an input request.
+///
+/// These buffer sizes don't include read/write file data, which is
+/// handled separately.
+///
+/// Default values can be used with [`SftpServerHandler::new_default_buffers()`].
+/// `SftpServerHandler` has const constructors so it can be placed in static storage.
+///
+/// Application specific handling is provided as a [`SftpServer`] argument
+/// to [`SftpServerHandler::run`].
+pub struct SftpServerHandler<const REQ_BUF: usize, const RESP_BUF: usize> {
+    /// Queue to avoid deadlock. See INPUT_BUF docs.
+    in_queue: SFTPBBQueue<INPUT_BUF>,
+
+    /// Buffer for one input packet
+    in_buf: [u8; REQ_BUF],
+    /// Buffer for one output packet
+    out_buf: [u8; RESP_BUF],
+}
+
+// TODO is MAX_REQUEST_LEN appropriate for responses?
+impl SftpServerHandler<MAX_REQUEST_LEN, MAX_REQUEST_LEN> {
+    /// Create a new `SftpServerHandler` with default buffers.
+    ///
+    /// Both request and response buffers will be sized as [`MAX_REQUEST_LEN`].
+    pub const fn new_default_buffers() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for SftpServerHandler<MAX_REQUEST_LEN, MAX_REQUEST_LEN> {
+    /// Calls [`SftpServerHandler::new_default_buffers`].
+    fn default() -> Self {
+        Self::new_default_buffers()
+    }
+}
+
+impl<const REQ_BUF: usize, const RESP_BUF: usize>
+    SftpServerHandler<REQ_BUF, RESP_BUF>
+{
+    /// Create a new `SftpServerHandler`.
+    ///
+    /// [`SftpServerHandler::new_default_buffers()`] can be used
+    /// for default sized buffers.
+    pub const fn new() -> Self {
+        Self { in_queue: SFTPBBQueue::new(), in_buf: [0; _], out_buf: [0; _] }
+    }
+
+    /// Runs the SFTP server loop to completion.
+    ///
+    /// Takes an [`embedded_io_async::Read`] and [`embedded_io_async::Write`].
+    /// Processes all the requests from `chan_in` until an EOF is received.
+    ///
+    /// Will delegate requests to an [`SftpServer`]
+    /// implemented by the library user taking into account the local system details.
+    ///
+    /// `run` may only be called once for each SFTP session, any failures
+    /// are fatal. It is OK to reuse a `SftpServerHandler` with a new
+    /// SFTP session.
+    pub async fn run(
+        &mut self,
+        file_server: &mut impl SftpServer,
+        chan_in: impl Read,
+        chan_out: impl Write,
+    ) -> SftpResult<()> {
+        // Reset state in case of reuse.
+        // in_buf/out_buf content shouldn't matter, but zeroing them
+        // avoids some risk from bugs.
+        *self = Self::new();
+
+        Handler::new(file_server)
+            .process_loop(
+                chan_in,
+                chan_out,
+                &self.in_queue,
+                &mut self.in_buf,
+                &mut self.out_buf,
+            )
+            .await
+    }
+}
+
+/// Inner structure, without storage.
+struct Handler<'a, S>
 where
     S: SftpServer,
 {
@@ -88,7 +169,7 @@ where
     file_server: &'a mut S,
 }
 
-impl<'a, S, const BUFFER_OUT_SIZE: usize> SftpHandler<'a, S, BUFFER_OUT_SIZE>
+impl<'a, S> Handler<'a, S>
 where
     S: SftpServer,
 {
@@ -100,30 +181,30 @@ where
     ///   the request in the local system
     /// - `request_buffer`: used to deal with fragmented
     ///   packets during [`SftpHandler::process_loop`]
-    pub fn new(file_server: &'a mut S) -> Self {
-        SftpHandler { file_server, state: HandlerState::First }
+    fn new(file_server: &'a mut S) -> Self {
+        Handler { file_server, state: HandlerState::First }
     }
 
     /// Runs the SFTP server loop.
     ///
     /// Takes an [`embedded_io_async::Read`] and [`embedded_io_async::Write`].
     /// Processes all the request from `chan_in` until an EOF is received.
-    pub async fn process_loop(
+    async fn process_loop(
         &mut self,
         mut chan_in: impl Read,
         mut chan_out: impl Write,
+        in_queue: &SFTPBBQueue<INPUT_BUF>,
+        in_buf: &mut [u8],
+        out_buf: &mut [u8],
     ) -> SftpResult<()> {
         // A single request should be adequate for progress.
-        let mut out_buf = [0u8; BUFFER_OUT_SIZE];
-        let mut output_producer =
-            SftpOutputProducer::new(&mut chan_out, &mut out_buf);
+        let mut output_producer = SftpOutputProducer::new(&mut chan_out, out_buf);
 
         // Docs for `INPUT_BUF` describe the queue's purpose.
-        // This bbq may not be shared between futures.
-        let in_buf = SFTPBBQueue::new();
+        // in_buf may not be shared between futures.
 
         let read_loop = async {
-            let prod = in_buf.stream_producer();
+            let prod = in_queue.stream_producer();
             loop {
                 let mut input = prod.wait_grant_max_remaining(usize::MAX).await;
                 trace!("SFTP: About to read bytes from SSH Channel");
@@ -146,7 +227,7 @@ where
             SftpResult::Ok(())
         };
 
-        let process = self.process(&in_buf, &mut output_producer);
+        let process = self.process(in_queue, in_buf, &mut output_producer);
 
         // TODO: on read_loop error, should wait for in_buf to drain,
         // with wait_grant_exact(IN_BUF), then can cancel
@@ -501,21 +582,18 @@ where
     async fn process<W>(
         &mut self,
         input: &SFTPBBQueue<INPUT_BUF>,
+        in_buf: &mut [u8],
         output_producer: &mut SftpOutputProducer<'_, W>,
     ) -> SftpResult<()>
     where
         W: Write,
     {
-        // TODO should caller pass this in?
-        let mut buf = [0; MAX_REQUEST_LEN];
-        let buf = &mut buf[..];
-
         loop {
             match self.state {
                 HandlerState::First | HandlerState::Normal => {
                     // TODO error handling
                     let first = matches!(self.state, HandlerState::First);
-                    self.process_one(input, output_producer, buf, first).await?;
+                    self.process_one(input, output_producer, in_buf, first).await?;
                 }
                 HandlerState::ProcessWriteRequest { .. } => {
                     self.process_write(input, output_producer).await?;
@@ -531,13 +609,13 @@ where
         &mut self,
         input: &SFTPBBQueue<INPUT_BUF>,
         output_producer: &mut SftpOutputProducer<'_, W>,
-        buf: &mut [u8],
+        in_buf: &mut [u8],
         first: bool,
     ) -> SftpResult<()>
     where
         W: Write,
     {
-        let mut source = SftpSource::empty(buf);
+        let mut source = SftpSource::empty(in_buf);
         match source.fill(input).await {
             SftpDecoded::Packet(pkt) => {
                 if first {

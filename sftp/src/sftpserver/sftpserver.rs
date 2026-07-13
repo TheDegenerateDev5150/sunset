@@ -149,10 +149,15 @@ impl TryFrom<OpaqueHandle<'_>> for DirHandle {
     }
 }
 
+/// Application SFTP server implementation.
+///
+/// This is used to define an application's behaviour with
+/// [`SftpServerHandler`](crate::SftpServerHandler).
+///
 /// All trait functions are optional in the SFTP protocol.
 /// Some less core operations have a Provided implementation returning
 /// returns `SSH_FX_OP_UNSUPPORTED`. Common operations must be implemented,
-/// but may return `Err(crate::proto::StatusCode::SSH_FX_OP_UNSUPPORTED)`.
+/// but may return [`Err(StatusCode::SSH_FX_OP_UNSUPPORTED)`](crate::proto::StatusCode)
 pub trait SftpServer {
     /// Opens a file for reading/writing
     fn open(
