@@ -4,3 +4,4 @@ runner = "probe-rs  run --chip RP2040 --speed 20000"
 [build]
 target = "thumbv6m-none-eabi"
 
+rustflags = ['--cfg', 'getrandom_backend="custom"', '--cfg', 'sha2_backend_soft="compact"' ]

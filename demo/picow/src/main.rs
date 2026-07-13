@@ -77,7 +77,6 @@ async fn main(spawner: Spawner) {
 
     // RNG initialised early, all crypto relies on it
     caprand::setup(p.PIN_10).unwrap();
-    getrandom::register_custom_getrandom!(demo_getrandom_v02);
 
     // Configuration loaded from flash
     let mut flash = flashconfig::Fl::new(Flash::new(p.FLASH, p.DMA_CH2, DmaIrqs));
@@ -358,8 +357,15 @@ impl DemoServer for &'static PicoDemo {
     }
 }
 
-fn demo_getrandom_v02(dest: &mut [u8]) -> Result<(), getrandom::Error> {
-    caprand::getrandom(dest).map_err(|_| getrandom::Error::UNEXPECTED)
+#[unsafe(no_mangle)]
+unsafe extern "Rust" fn __getrandom_v03_custom(
+    dest: *mut u8,
+    len: usize,
+) -> Result<(), getrandom::Error> {
+    unsafe {
+        caprand::getrandom_raw(dest, len)
+            .map_err(|_| getrandom::Error::new_custom(123))
+    }
 }
 
 #[panic_handler]

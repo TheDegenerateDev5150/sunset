@@ -16,7 +16,7 @@ rpassword = "7.2"
 argh = "0.1"
 zeroize.workspace = true
 
-ssh-key = { version = "0.6", default-features = false, features = [ "std"] }
+ssh-key = { workspace = true, features = [ "std"] }
 
 embassy-sync.workspace = true
 embassy-futures.workspace = true

@@ -78,11 +78,11 @@ impl SSHChaPoly {
         c.apply_keystream(&mut poly_key);
 
         // check tag
-        let msg_tag = poly1305::Tag::from_slice(mac);
+        let msg_tag = poly1305::Tag::try_from(mac).map_err(|_| Error::BadDecrypt)?;
         let poly = Poly1305::new((&poly_key).into());
         // compute_unpadded() adds the necessary trailing 1 byte when padding output
         let tag = poly.compute_unpadded(msg);
-        let good: bool = tag.ct_eq(msg_tag).into();
+        let good: bool = tag.ct_eq(&msg_tag).into();
         if !good {
             return Err(Error::BadDecrypt);
         }

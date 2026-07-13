@@ -748,22 +748,25 @@ impl<T: SSHWireDigestUpdate> From<T> for SSHWireDigestTrace<T> {
 }
 
 #[cfg(feature = "rsa")]
-impl SSHEncode for rsa::BigUint {
+impl SSHEncode for rsa::BoxedUint {
     fn enc(&self, s: &mut dyn SSHSink) -> WireResult<()> {
-        let b = self.to_bytes_be();
-        let b = b.as_slice();
-        Mpint(b).enc(s)
+        let b = self.to_be_bytes();
+        Mpint(&b).enc(s)
     }
 }
 
 #[cfg(feature = "rsa")]
-impl<'de> SSHDecode<'de> for rsa::BigUint {
+impl<'de> SSHDecode<'de> for rsa::BoxedUint {
     fn dec<S>(s: &mut S) -> WireResult<Self>
     where
         S: SSHSource<'de>,
     {
         let b = Mpint::dec(s)?;
-        Ok(rsa::BigUint::from_bytes_be(b.0))
+        Ok(rsa::BoxedUint::from_be_slice(b.0.into(), packets::RSAPubKey::MAX_BITS)
+            .map_err(|_| {
+            debug!("RSA too large");
+            WireError::BadNumber
+        })?)
     }
 }
 

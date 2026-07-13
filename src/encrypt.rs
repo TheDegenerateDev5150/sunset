@@ -14,6 +14,7 @@ use core::fmt::Debug;
 use core::num::{Saturating, Wrapping};
 
 use aes::cipher::{BlockSizeUser, KeyIvInit, KeySizeUser, StreamCipher};
+use digest::KeyInit;
 use hmac::Mac;
 use sha2::Digest as Sha2DigestForTrait;
 use zeroize::ZeroizeOnDrop;
@@ -47,8 +48,6 @@ const REKEY_BLOCKS_OUT_LIMIT: u32 = 0x8000_0000;
 const REKEY_BLOCKS_IN_LIMIT: u32 = 0x8100_0000;
 const REKEY_BLOCK_SIZE: usize = 16;
 
-/// Stateful [`Keys`], stores a sequence number as well, a single instance
-/// is kept for the entire session.
 #[derive(Debug)]
 pub(crate) struct KeyState {
     enc: KeysSend,
@@ -557,7 +556,7 @@ impl Cipher {
     }
 }
 
-#[derive(Clone, ZeroizeOnDrop)]
+#[derive(ZeroizeOnDrop)]
 pub(crate) enum EncKey {
     ChaPoly(SSHChaPoly),
     Aes256Ctr(Aes256Ctr32BE),
@@ -612,7 +611,7 @@ impl EncKey {
     }
 }
 
-#[derive(Clone, ZeroizeOnDrop)]
+#[derive(ZeroizeOnDrop)]
 pub(crate) enum DecKey {
     ChaPoly(SSHChaPoly),
     Aes256Ctr(Aes256Ctr32BE),

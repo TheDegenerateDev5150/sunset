@@ -18,7 +18,6 @@ use ml_kem::{
     B32, Ciphertext, DecapsulationKey, Key, KeyExport, MlKem768, Seed,
     kem::{Decapsulate, EncapsulationKey},
 };
-use rand_core::OsRng;
 use sha2::Sha256;
 use zeroize::ZeroizeOnDrop;
 
@@ -976,7 +975,8 @@ impl core::fmt::Debug for KexCurve25519 {
 
 impl KexCurve25519 {
     fn new() -> Result<Self> {
-        let ours = x25519_dalek::EphemeralSecret::random_from_rng(OsRng);
+        let ours =
+            x25519_dalek::EphemeralSecret::random_from_rng(&mut random::rng());
         let pubkey = x25519_dalek::PublicKey::from(&ours);
         let pubkey = pubkey.to_bytes();
         Ok(KexCurve25519 { ours: Some(ours), pubkey })

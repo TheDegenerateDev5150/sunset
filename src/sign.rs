@@ -201,12 +201,18 @@ impl SigType {
             Error::BadSig
         })?;
 
-        let mut h = sha2::Sha256::new();
-        sshwire::hash_ser(&mut h, msg)?;
-        verifying_key.verify_digest(h, &signature).map_err(|e| {
-            trace!("RSA verify failed: {e}");
-            Error::BadSig
-        })
+        verifying_key
+            .verify_digest(
+                |h| {
+                    sshwire::hash_ser(h, msg)
+                        .map_err(|_| rsa::signature::Error::new())
+                },
+                &signature,
+            )
+            .map_err(|e| {
+                trace!("RSA verify failed: {e}");
+                Error::BadSig
+            })
     }
 
     #[cfg(feature = "_ecdsa")]
@@ -356,7 +362,7 @@ impl SignKey {
                 if bits.unwrap_or(256) != 256 {
                     return Err(Error::msg("Bad key size"));
                 }
-                let k = dalek::SigningKey::generate(&mut rand_core::OsRng);
+                let k = dalek::SigningKey::generate(&mut random::rng());
                 Ok(Self::Ed25519(k))
             }
 
@@ -370,12 +376,13 @@ impl SignKey {
                     return Err(Error::msg("Bad key size"));
                 }
 
-                let k = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, bits)
-                    .map_err(|e| {
+                let k = rsa::RsaPrivateKey::new(&mut random::rng(), bits).map_err(
+                    |e| {
                         debug!("RSA key generation error {e}");
                         // RNG shouldn't fail, keysize has been checked
                         Error::bug()
-                    })?;
+                    },
+                )?;
                 Ok(Self::RSA(k))
             }
         }
@@ -477,12 +484,15 @@ impl SignKey {
             SignKey::RSA(k) => {
                 let signing_key =
                     rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(k.clone());
-                let mut h = sha2::Sha256::new();
-                sshwire::hash_ser(&mut h, msg)?;
-                let sig = signing_key.try_sign_digest(h).map_err(|e| {
-                    trace!("RSA signing failed: {e:?}");
-                    Error::bug()
-                })?;
+                let sig = signing_key
+                    .try_sign_digest(|h| {
+                        sshwire::hash_ser(h, msg)
+                            .map_err(|_| rsa::signature::Error::new())
+                    })
+                    .map_err(|e| {
+                        trace!("RSA signing failed: {e:?}");
+                        Error::bug()
+                    })?;
                 OwnedSig::RSA(sig.into())
             }
 
@@ -566,18 +576,7 @@ impl TryFrom<ssh_key::PrivateKey> for SignKey {
 
             #[cfg(feature = "rsa")]
             ssh_key::private::KeypairData::Rsa(k) => {
-                let primes = vec![
-                    (&k.private.p).try_into().map_err(|_| Error::BadKey)?,
-                    (&k.private.q).try_into().map_err(|_| Error::BadKey)?,
-                ];
-                let key = rsa::RsaPrivateKey::from_components(
-                    (&k.public.n).try_into().map_err(|_| Error::BadKey)?,
-                    (&k.public.e).try_into().map_err(|_| Error::BadKey)?,
-                    (&k.private.d).try_into().map_err(|_| Error::BadKey)?,
-                    primes,
-                )
-                .map_err(|_| Error::BadKey)?;
-                Ok(SignKey::RSA(key))
+                Ok(SignKey::RSA(k.try_into().map_err(|_| Error::BadKey)?))
             }
             _ => {
                 debug!("Unknown ssh-key algorithm {}", k.algorithm().as_str());

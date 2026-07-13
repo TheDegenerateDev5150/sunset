@@ -392,10 +392,8 @@ impl TryFrom<&PubKey<'_>> for ssh_key::PublicKey {
 
             #[cfg(feature = "rsa")]
             PubKey::RSA(r) => {
-                let k = ssh_key::public::RsaPublicKey {
-                    n: r.key.n().try_into().map_err(|_| Error::BadKey)?,
-                    e: r.key.e().try_into().map_err(|_| Error::BadKey)?,
-                };
+                let k = ssh_key::public::RsaPublicKey::try_from(&r.key)
+                    .map_err(|_| Error::BadKey)?;
                 Ok(k.into())
             }
 
@@ -435,6 +433,12 @@ pub struct RSAPubKey {
 }
 
 #[cfg(feature = "rsa")]
+impl RSAPubKey {
+    /// Bits for `rsa::BoxedUint::from_be_slice()`.
+    pub(crate) const MAX_BITS: u32 = 8192;
+}
+
+#[cfg(feature = "rsa")]
 impl SSHEncode for RSAPubKey {
     fn enc(&self, s: &mut dyn SSHSink) -> WireResult<()> {
         self.key.e().enc(s)?;
@@ -471,8 +475,13 @@ impl Debug for RSAPubKey {
 #[cfg(all(feature = "arbitrary", feature = "rsa"))]
 impl Arbitrary<'_> for RSAPubKey {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
-        let e = rsa::BigUint::from_bytes_be(arbitrary::Arbitrary::arbitrary(u)?);
-        let n = rsa::BigUint::from_bytes_be(arbitrary::Arbitrary::arbitrary(u)?);
+        // OK to use vartime with arbitrary.
+        let e = rsa::BoxedUint::from_be_slice_vartime(
+            arbitrary::Arbitrary::arbitrary(u)?,
+        );
+        let n = rsa::BoxedUint::from_be_slice_vartime(
+            arbitrary::Arbitrary::arbitrary(u)?,
+        );
         let key = rsa::RsaPublicKey::new(n, e)
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(Self { key })

@@ -16,11 +16,10 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 
 use embassy_net_wiznet::*;
 
-use rand::RngCore;
-use rand::rngs::OsRng;
 use static_cell::StaticCell;
 
 use crate::{SSHConfig, SunsetMutex};
+use getrandom::rand_core::TryRng;
 
 #[embassy_executor::task]
 async fn ethernet_task(
@@ -78,7 +77,7 @@ pub(crate) async fn w5500_stack(
     };
 
     // Generate random seed
-    let seed = OsRng.next_u64();
+    let seed = getrandom::SysRng.try_next_u64().unwrap();
 
     // Init network stack
     static SR: StaticCell<StackResources<{ crate::NUM_SOCKETS }>> =

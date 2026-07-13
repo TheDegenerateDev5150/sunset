@@ -45,6 +45,14 @@ log = "0.4"
 
 heapless = "0.9"
 
+ssh-key = { version = "0.7.0-rc.11", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+hmac = "0.13"
+subtle = { version = "2.6", default-features = false }
+
+getrandom = { version = "0.4" }
+rand_core = { version = "0.10", default-features = false }
+
 [dependencies]
 sunset-sshwire-derive = { workspace = true }
 
@@ -57,37 +65,32 @@ ascii = { version = "1.0", default-features = false }
 
 arbitrary = { workspace = true, optional = true }
 
-getrandom = "0.2"
-rand_core = { version = "0.6", default-features = false, features = [
-    "getrandom",
-] }
+getrandom = { workspace = true, features = ["sys_rng"] }
+rand_core.workspace = true
 
-ctr = { version = "0.9", features = ["zeroize"] }
-aes = { version = "0.8", features = ["zeroize"] }
+ctr = { version = "0.10", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
 chacha20 = { version = "0.9", features = ["zeroize"] }
-sha2 = { version = "0.10", default-features = false }
-hmac = "0.12"
-poly1305 = "0.8"
-digest = "0.10"
+sha2.workspace = true
+hmac.workspace = true
+poly1305 = "0.9"
+digest = "0.11"
 zeroize.workspace = true
-cipher = { version = "0.4", features = ["zeroize"] }
-subtle = { version = "2.4", default-features = false }
+cipher = { version = "0.5", features = ["zeroize"] }
+subtle.workspace = true
 # ed25519/x25519
-ed25519-dalek = { version = "2.1", default-features = false, features = ["zeroize", "rand_core"] }
-x25519-dalek = { version = "2.0", default-features = false, features = ["zeroize"] }
-curve25519-dalek = { version = "4.1", default-features = false, features = ["zeroize"] }
+ed25519-dalek = { version = "3.0", default-features = false, features = ["zeroize", "rand_core"] }
+x25519-dalek = { version = "3.0", default-features = false, features = ["zeroize"] }
 ml-kem = { version = "0.3.2", default-features = false, features = ["zeroize"], optional = true }
-rsa = { version = "0.9", default-features = false, optional = true, features = ["sha2"] }
+rsa = { version = "=0.10.0-rc.18", default-features = false, optional = true, features = ["sha2"] }
 # TODO: getrandom feature is a workaround for missing ssh-key dependency with rsa. fixed in pending 0.6
-ssh-key = { version = "0.6", default-features = false, optional = true, features = [
-    "getrandom",
-] }
+ssh-key = { workspace = true, optional = true }
 
 embedded-io = { workspace = true, optional = true }
 
 # TODO rc versions
-p256 = { version = "0.14.0-rc.9", optional = true, default-features = false, features = ["ecdsa"] }
-ecdsa = { version = "0.17.0-rc.17", default-features = false, optional = true , features = ["hazmat", "algorithm"]}
+p256 = { version = "0.14", optional = true, default-features = false, features = ["ecdsa"] }
+ecdsa = { version = "0.17.0", default-features = false, optional = true , features = ["algorithm"]}
 
 [features]
 default = ["mlkem"]

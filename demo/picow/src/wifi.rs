@@ -17,11 +17,11 @@ use embassy_rp::{bind_interrupts, dma};
 use cyw43::{A4, Aligned};
 use cyw43_pio::PioSpi;
 
-use rand::RngCore;
-use rand::rngs::OsRng;
 use static_cell::StaticCell;
 
 use crate::{SSHConfig, SunsetMutex};
+
+use getrandom::rand_core::TryRng;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<PIO0>;
@@ -69,7 +69,7 @@ pub(crate) async fn wifi_stack(
     let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
     spawner.spawn(wifi_task(runner).unwrap());
 
-    let seed = OsRng.next_u64();
+    let seed = getrandom::SysRng.try_next_u64().unwrap();
     let net_cf = if let Some(ref s) = config.lock().await.ip4_static {
         embassy_net::Config::ipv4_static(s.clone())
     } else {
