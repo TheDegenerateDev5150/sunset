@@ -72,3 +72,14 @@ extern crate self as sunset;
 
 #[cfg(feature = "embedded-io")]
 pub use embedded_io;
+
+// Re-exports.
+// Crypto formats so that applications can handle
+// private keys themselves.
+#[cfg(feature = "_ecdsa")]
+use ecdsa;
+pub use ed25519_dalek;
+#[cfg(feature = "ecdsa256")]
+use p256;
+#[cfg(feature = "rsa")]
+pub use rsa;

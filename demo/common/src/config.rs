@@ -7,6 +7,7 @@ use log::{debug, error, info, log, trace, warn};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
+use sunset::ed25519_dalek;
 
 use heapless::{String, Vec};
 
