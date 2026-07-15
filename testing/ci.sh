@@ -16,7 +16,9 @@ mkdir -p ci_out
 OUT="$(realpath ci_out)"
 
 export RUSTDOCFLAGS='-D warnings'
-export RUSTFLAGS='-D warnings'
+# CARGO_BUILD_WARNINGS was added in rust 1.97, older
+# versions will miss out.
+export CARGO_BUILD_WARNINGS=deny
 
 # dependencies
 which cargo-bloat > /dev/null || cargo install cargo-bloat
