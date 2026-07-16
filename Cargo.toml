@@ -78,17 +78,15 @@ digest = "0.11"
 zeroize.workspace = true
 cipher = { version = "0.5", features = ["zeroize"] }
 subtle.workspace = true
-# ed25519/x25519
 ed25519-dalek = { version = "3.0", default-features = false, features = ["zeroize", "rand_core"] }
 x25519-dalek = { version = "3.0", default-features = false, features = ["zeroize"] }
 ml-kem = { version = "0.3.2", default-features = false, features = ["zeroize"], optional = true }
+# TODO rc version
 rsa = { version = "=0.10.0-rc.18", default-features = false, optional = true, features = ["sha2"] }
-# TODO: getrandom feature is a workaround for missing ssh-key dependency with rsa. fixed in pending 0.6
 ssh-key = { workspace = true, optional = true }
 
 embedded-io = { workspace = true, optional = true }
 
-# TODO rc versions
 p256 = { version = "0.14", optional = true, default-features = false, features = ["ecdsa"] }
 ecdsa = { version = "0.17.0", default-features = false, optional = true , features = ["algorithm"]}
 
