@@ -80,7 +80,7 @@ impl SigType {
             SSH_NAME_RSA_SHA256 => Ok(SigType::RSA),
             #[cfg(feature = "ecdsa256")]
             SSH_NAME_ECDSA256 => Ok(SigType::ECDSA256),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 
@@ -380,7 +380,7 @@ impl SignKey {
                     |e| {
                         debug!("RSA key generation error {e}");
                         // RNG shouldn't fail, keysize has been checked
-                        Error::bug()
+                        Error::build_bug()
                     },
                 )?;
                 Ok(Self::RSA(k))
@@ -491,7 +491,7 @@ impl SignKey {
                     })
                     .map_err(|e| {
                         trace!("RSA signing failed: {e:?}");
-                        Error::bug()
+                        Error::build_bug()
                     })?;
                 OwnedSig::RSA(sig.into())
             }
@@ -504,7 +504,7 @@ impl SignKey {
                 let sig: ecdsa::Signature<NistP256> =
                     k.sign_prehash(&h).map_err(|_| {
                         trace!("ECDSA signing failed");
-                        Error::bug()
+                        Error::build_bug()
                     })?;
                 let (r, s) = sig.split_bytes();
                 OwnedSig::ECDSA256 { r: r.into(), s: s.into() }

@@ -504,7 +504,7 @@ where
             | SftpPacket::Name(..)
             | SftpPacket::Attrs(..) => {
                 // Should have been caught by is_request() above.
-                Err(sunset::Error::bug())?;
+                sunset::Error::bug()?;
             }
         }
         Ok(())
@@ -528,7 +528,7 @@ where
             mut remaining,
         } = self.state
         else {
-            Err(sunset::Error::bug())?
+            sunset::Error::bug()?
         };
         self.state = HandlerState::Normal;
 

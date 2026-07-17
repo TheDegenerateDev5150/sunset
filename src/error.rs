@@ -165,9 +165,10 @@ pub enum Error {
     #[cfg(feature = "embedded-io")]
     EmbeddedIoError { kind: embedded_io::ErrorKind },
 
-    // This state should not be reached, previous logic should have prevented it.
+    // Error::Bug should not be reached, previous logic should have prevented it.
     // Create this using [`Error::bug()`] or [`.trap()`](TrapBug::trap).
-    // Location is currently disabled due to bloat.
+    // Location is currently disabled due to bloat of full paths.
+    // https://github.com/rust-lang/rust/issues/95529 is having functions.
     // #[snafu(display("Program bug {location}"))]
     // Bug { location: snafu::Location },
     /// Program bug
@@ -183,23 +184,21 @@ impl Error {
 
     #[cold]
     #[track_caller]
+    /// Panics in debug builds, returns [`Result::Err(Error::Bug)`](Error::Bug) in release.
+    pub fn bug<T>() -> Result<T, Error> {
+        Err(Self::build_bug())
+    }
+
+    #[cold]
+    #[track_caller]
     /// Panics in debug builds, returns [`Error::Bug`] in release.
-    // TODO: this should return a Result since it's always used as Err(Error::bug())
-    pub fn bug() -> Error {
+    pub fn build_bug() -> Error {
         // Easier to track the source of errors in development,
         // but release builds shouldn't panic.
         if cfg!(debug_assertions) {
             panic!("Hit a bug");
         } else {
-            // let caller = core::panic::Location::caller();
             Error::Bug
-            // {
-            //     location: snafu::Location::new(
-            //         caller.file(),
-            //         caller.line(),
-            //         caller.column(),
-            //     ),
-            // }
         }
     }
 
@@ -207,15 +206,13 @@ impl Error {
     ///
     /// The message can be used instead of a code comment, is logged at `trace` level.
     #[cold]
-    pub fn bug_fmt(args: Arguments) -> Error {
+    fn bug_fmt(args: Arguments) -> Error {
         // Easier to track the source of errors in development,
         // but release builds shouldn't panic.
         if cfg!(debug_assertions) {
             panic!("Hit a bug: {args}");
         } else {
             trace!("Hit a bug: {args}");
-            // TODO: this bloats binaries with full paths
-            // https://github.com/rust-lang/rust/issues/95529 is having function
             // let caller = core::panic::Location::caller();
             Error::Bug
             // {
@@ -229,13 +226,12 @@ impl Error {
     }
 
     #[cold]
-    /// TODO: is the generic `T` going to make it bloat?
     pub fn bug_msg<T>(msg: &str) -> Result<T, Error> {
         Err(Self::bug_fmt(format_args!("{}", msg)))
     }
 
     #[cold]
-    pub fn bug_err_msg(msg: &str) -> Error {
+    pub fn build_bug_msg(msg: &str) -> Error {
         Self::bug_fmt(format_args!("{}", msg))
     }
 }
@@ -272,7 +268,7 @@ impl<T, E> TrapBug<T> for Result<T, E> {
     #[track_caller]
     fn trap(self) -> Result<T, Error> {
         // call directly so that Location::caller() works
-        if let Ok(i) = self { Ok(i) } else { Err(Error::bug()) }
+        if let Ok(i) = self { Ok(i) } else { return Error::bug() }
     }
     #[track_caller]
     fn trap_msg(self, args: Arguments) -> Result<T, Error> {
@@ -285,7 +281,7 @@ impl<T> TrapBug<T> for Option<T> {
     #[track_caller]
     fn trap(self) -> Result<T, Error> {
         // call directly so that Location::caller() works
-        if let Some(i) = self { Ok(i) } else { Err(Error::bug()) }
+        if let Some(i) = self { Ok(i) } else { Error::bug() }
     }
     #[track_caller]
     fn trap_msg(self, args: Arguments) -> Result<T, Error> {

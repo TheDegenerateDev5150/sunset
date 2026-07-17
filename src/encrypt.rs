@@ -404,7 +404,7 @@ impl KeysRecv {
         seq: u32,
     ) -> Result<usize, Error> {
         if buf.len() < self.cipher.size_block() {
-            return Err(Error::bug());
+            return Error::bug();
         }
 
         #[cfg(fuzzing)]
@@ -527,7 +527,7 @@ impl Cipher {
         match name {
             SSH_NAME_CHAPOLY => Ok(Cipher::ChaPoly),
             SSH_NAME_AES256_CTR => Ok(Cipher::Aes256Ctr),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 
@@ -676,7 +676,7 @@ impl Integ {
     pub fn from_name(name: &'static str) -> Result<Self, Error> {
         match name {
             SSH_NAME_HMAC_SHA256 => Ok(Integ::HmacSha256),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
     /// length in bytes

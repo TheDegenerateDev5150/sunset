@@ -150,7 +150,7 @@ impl CliAuth {
         s: &mut TrafSend,
     ) -> Result<DispatchEvent> {
         let AuthState::RequestKey { key } = &self.state else {
-            return Err(Error::bug());
+            return Error::bug();
         };
 
         parse_ctx.cli_auth_type = None;
@@ -249,7 +249,7 @@ impl CliAuth {
 
     pub fn fetch_agentsign_key(&self) -> Result<&SignKey> {
         let AuthState::RequestKey { key } = &self.state else {
-            return Err(Error::bug());
+            return Error::bug();
         };
         debug_assert!(key.is_agent());
         Ok(key)
@@ -260,7 +260,7 @@ impl CliAuth {
         sess_id: &'b SessId,
     ) -> Result<AuthSigMsg<'b>> {
         let AuthState::RequestKey { key } = &self.state else {
-            return Err(Error::bug());
+            return Error::bug();
         };
 
         // Sign the packet without the signature

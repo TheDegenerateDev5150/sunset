@@ -50,7 +50,7 @@ impl<'a> SSHClient<'a> {
             Event::Cli(x) => Ok(x),
             Event::None => Ok(CliEvent::PollAgain),
             Event::Progressed => Ok(CliEvent::PollAgain),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 

@@ -366,7 +366,7 @@ impl<'a, CS: CliServ> Runner<'a, CS> {
                     disp.event = DispatchEvent::None;
                 }
                 // TODO, may get used later?
-                DispatchEvent::Progressed => return Err(Error::bug()),
+                DispatchEvent::Progressed => return Error::bug(),
             }
         } else if self.closed_input {
             // all incoming packets have been consumed, and we're closed for input,
@@ -390,7 +390,7 @@ impl<'a, CS: CliServ> Runner<'a, CS> {
                 | DispatchEvent::Progressed => (),
                 // Don't expect data from conn.progress()
                 DispatchEvent::Data(_) | DispatchEvent::KexDone => {
-                    return Err(Error::bug());
+                    return Error::bug();
                 }
             }
         }

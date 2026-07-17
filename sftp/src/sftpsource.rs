@@ -247,7 +247,9 @@ impl<'a> SftpSource<'a> {
     pub fn decode(&self) -> SftpDecoded<'_> {
         let Some(req_id) = self.peek_packet_req_id() else {
             // Packet is shorter than minimum.
-            return SftpDecoded::FillError { error: sunset::Error::bug().into() };
+            return SftpDecoded::FillError {
+                error: sunset::Error::build_bug().into(),
+            };
         };
 
         // Skip the length prefix

@@ -52,7 +52,7 @@ impl<'a> SSHServer<'a> {
             Event::Serv(x) => Ok(x),
             Event::None => Ok(ServEvent::PollAgain),
             Event::Progressed => Ok(ServEvent::PollAgain),
-            Event::Cli(_) => Err(Error::bug()),
+            Event::Cli(_) => Error::bug(),
         }
     }
 

@@ -69,11 +69,13 @@ impl<'a, CS: CliServ> Inner<'a, CS> {
     ///
     /// Returns split references that will be required by many callers
     fn fetch(&mut self, num: ChanNum) -> Result<(&mut Runner<'a, CS>, &ChanHandle)> {
-        let h = self
+        let ch = self
             .chan_handles
             .get(num.0 as usize)
-            .ok_or(Error::BadChannel { num })?;
-        h.as_ref().map(|ch| (&mut self.runner, ch)).ok_or_else(Error::bug)
+            .ok_or(Error::BadChannel { num })?
+            .as_ref()
+            .trap()?;
+        Ok((&mut self.runner, ch))
     }
 }
 

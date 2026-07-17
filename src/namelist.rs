@@ -132,7 +132,7 @@ impl<'a> NameList<'a> {
             }),
             // we only expect to call first_match() on a packet deserialized
             // as a NameList::String
-            NameList::Local(_) => Err(Error::bug()),
+            NameList::Local(_) => Error::bug(),
         }
     }
 
@@ -143,7 +143,7 @@ impl<'a> NameList<'a> {
         match self {
             NameList::String(s) => Ok(s.has_algo(algo)),
             // only expected to be called on remote lists
-            NameList::Local(_) => Err(Error::bug()),
+            NameList::Local(_) => Error::bug(),
         }
     }
 

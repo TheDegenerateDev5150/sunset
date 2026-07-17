@@ -177,7 +177,7 @@ impl Channels {
                 send.max_packet,
                 send.window
             );
-            return Err(Error::bug());
+            return Error::bug();
         }
         send.window -= data.len();
         trace!("send_data: new window {}", send.window);
@@ -546,7 +546,7 @@ impl Channels {
                 Ok(())
             }
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 
@@ -561,7 +561,7 @@ impl Channels {
                     ChannelReqType::Subsystem(packets::Subsystem { subsystem: command }),
                 ..
             }) => Ok(*command),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 
@@ -571,7 +571,7 @@ impl Channels {
                 req: ChannelReqType::Environment(packets::Environment { name, .. }),
                 ..
             }) => Ok(*name),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 
@@ -582,7 +582,7 @@ impl Channels {
                     ChannelReqType::Environment(packets::Environment { name: _, value }),
                 ..
             }) => Ok(*value),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 }
@@ -1226,7 +1226,7 @@ impl<'g> CliSessionExit<'g> {
                 req: ChannelReqType::ExitSignal(e),
                 ..
             }) => Ok(Self::Signal(e.clone())),
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 }

@@ -281,7 +281,7 @@ impl<'a> TrafIn<'a> {
                 };
                 Ok((di.num, di.dt))
             }
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 
@@ -608,7 +608,7 @@ impl<'a> TrafOut<'a> {
 
     pub fn send_version(&mut self) -> Result<(), Error> {
         if !matches!(self.state, TxState::Idle) {
-            return Err(Error::bug());
+            return Error::bug();
         }
 
         let len = ident::write_version(&mut self.buf)?;

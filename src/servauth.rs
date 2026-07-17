@@ -145,7 +145,7 @@ impl ServAuth {
                 m.force_sig = sig.is_some();
                 (&m.pubkey.0, sig)
             }
-            _ => return Err(Error::bug()),
+            _ => return Error::bug(),
         };
 
         if let PubKey::Unknown(u) = key {
@@ -188,7 +188,7 @@ impl ServAuth {
                 key: m.pubkey,
             }))
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 

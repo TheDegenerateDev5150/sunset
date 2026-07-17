@@ -392,7 +392,7 @@ impl<CS: CliServ> Kex<CS> {
             Kex::KexInit { .. } | Kex::KexDH { .. } | Kex::NewKeys { .. } => {
                 // waiting for incoming packets, no progress
             }
-            Kex::Taken => return Err(Error::bug()),
+            Kex::Taken => return Error::bug(),
         }
         Ok(())
     }
@@ -672,7 +672,7 @@ impl Kex<Client> {
             // TODO could send ext_info here on first_kex
         } else {
             // Already checked in handle_kexdhreply
-            Err(Error::bug())
+            Error::bug()
         }
     }
 }
@@ -699,7 +699,7 @@ impl Kex<Server> {
             Ok(())
         } else {
             // Already checked in handle_kexdhinit
-            Err(Error::bug())
+            Error::bug()
         }
     }
 
@@ -746,7 +746,7 @@ impl SharedSecret {
             SSH_NAME_MLKEM_X25519 => {
                 Ok(SharedSecret::KexMlkemX25519(KexMlkemX25519::new()?))
             }
-            _ => Err(Error::bug()),
+            _ => Error::bug(),
         }
     }
 

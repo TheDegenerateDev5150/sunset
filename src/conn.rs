@@ -175,11 +175,11 @@ impl CliServ for client::Client {
     ) -> Result<Event<'g, 'a>> {
         match disp {
             DispatchEvent::CliEvent(x) => Ok(Event::Cli(x.event(runner)?)),
-            DispatchEvent::ServEvent(_) => Err(Error::bug()),
+            DispatchEvent::ServEvent(_) => Error::bug(),
             DispatchEvent::None => Ok(Event::None),
             DispatchEvent::Progressed => Ok(Event::Progressed),
             // Events handled internally by Runner::progress()
-            DispatchEvent::Data(_) | DispatchEvent::KexDone => Err(Error::bug()),
+            DispatchEvent::Data(_) | DispatchEvent::KexDone => Error::bug(),
         }
     }
 }
@@ -206,12 +206,12 @@ impl CliServ for server::Server {
         disp: DispatchEvent,
     ) -> Result<Event<'g, 'a>> {
         match disp {
-            DispatchEvent::CliEvent(_) => Err(Error::bug()),
+            DispatchEvent::CliEvent(_) => Error::bug(),
             DispatchEvent::ServEvent(x) => Ok(Event::Serv(x.event(runner)?)),
             DispatchEvent::None => Ok(Event::None),
             DispatchEvent::Progressed => Ok(Event::Progressed),
             // Events handled internally by Runner::progress()
-            DispatchEvent::Data(_) | DispatchEvent::KexDone => Err(Error::bug()),
+            DispatchEvent::Data(_) | DispatchEvent::KexDone => Error::bug(),
         }
     }
 }
@@ -245,7 +245,7 @@ impl<CS: CliServ> Conn<CS> {
 
     #[inline]
     pub fn server(&self) -> Result<&server::Server> {
-        self.cliserv.try_server().ok_or_else(|| Error::bug())
+        self.cliserv.try_server().trap()
     }
 
     #[inline]
@@ -255,12 +255,12 @@ impl<CS: CliServ> Conn<CS> {
 
     #[inline]
     fn mut_server(&mut self) -> Result<&mut server::Server> {
-        self.try_mut_server().ok_or_else(|| Error::bug())
+        self.try_mut_server().trap()
     }
 
     #[inline]
     fn client(&self) -> Result<&client::Client> {
-        self.cliserv.try_client().ok_or_else(|| Error::bug())
+        self.cliserv.try_client().trap()
     }
 
     #[inline]
@@ -564,7 +564,7 @@ impl Conn<Client> {
     pub(crate) fn mut_cliauth(
         &mut self,
     ) -> Result<(&mut CliAuth, &mut ParseContext)> {
-        let cli = self.cliserv.try_mut_client().ok_or_else(|| Error::bug())?;
+        let cli = self.cliserv.try_mut_client().trap()?;
         Ok((&mut cli.auth, &mut self.parse_ctx))
     }
 
@@ -592,7 +592,7 @@ impl Conn<Client> {
 
             self.kex.resume_kexdhreply(&p, &mut self.sess_id, s)
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 
@@ -601,11 +601,7 @@ impl Conn<Client> {
         payload: &'f [u8],
     ) -> Result<PubKey<'f>> {
         let packet = self.packet(payload)?;
-        if let Packet::KexDHReply(p) = packet {
-            Ok(p.k_s.0)
-        } else {
-            Err(Error::bug())
-        }
+        if let Packet::KexDHReply(p) = packet { Ok(p.k_s.0) } else { Error::bug() }
     }
 
     pub(crate) fn fetch_cli_session_exit<'p>(
@@ -623,7 +619,7 @@ impl Conn<Client> {
         if let Packet::UserauthBanner(b) = self.packet(payload)? {
             Ok(Banner(b))
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 }
@@ -645,7 +641,7 @@ impl Conn<Server> {
                 s,
             )
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 
@@ -661,7 +657,7 @@ impl Conn<Server> {
         {
             Ok(m.password)
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
     pub(crate) fn fetch_servpubkey<'f>(
@@ -676,7 +672,7 @@ impl Conn<Server> {
         {
             Ok(m.pubkey.0)
         } else {
-            Err(Error::bug())
+            Error::bug()
         }
     }
 

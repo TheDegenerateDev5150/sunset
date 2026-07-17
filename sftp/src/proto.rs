@@ -850,7 +850,7 @@ macro_rules! sftpmessages {
             /// Used by a SFTP client. Does not include the length field.
             pub fn encode_request(&self, id: ReqId, s: &mut dyn SSHSink) -> SftpResult<()> {
                 if !self.sftp_num().is_request() {
-                    Err(sunset::Error::bug())?;
+                    sunset::Error::bug()?;
                 }
 
                 // packet type
@@ -870,7 +870,7 @@ macro_rules! sftpmessages {
             pub fn encode_response(&self, s: &mut dyn SSHSink) -> SftpResult<()> {
 
                 if !self.sftp_num().is_response() {
-                    Err(sunset::Error::bug())?;
+                    sunset::Error::bug()?;
                 }
 
                 Ok(self.enc(s)?)
