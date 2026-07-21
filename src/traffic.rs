@@ -7,7 +7,7 @@ use {
     log::{debug, error, info, log, trace, warn},
 };
 
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::Zeroize;
 
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
@@ -31,7 +31,7 @@ const DEFER_COUNT: usize = 10;
 //
 // Zeroize is slow for fuzzing, so skip it.
 // In normal operation one zeroize per connection is fine.
-#[cfg_attr(not(fuzzing), derive(ZeroizeOnDrop))]
+#[cfg_attr(not(fuzzing), derive(zeroize::ZeroizeOnDrop))]
 enum SliceOrVec<'a> {
     Borrowed(&'a mut [u8]),
 
